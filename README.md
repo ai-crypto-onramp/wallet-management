@@ -1,5 +1,6 @@
 # Wallet Management
 ![CI](https://github.com/ai-crypto-onramp/wallet-management/actions/workflows/ci.yml/badge.svg)
+[![codecov](https://codecov.io/gh/ai-crypto-onramp/wallet-management/branch/main/graph/badge.svg)](https://codecov.io/gh/ai-crypto-onramp/wallet-management)
 
 Hot/warm wallet inventory, address derivation/rotation, and per-chain balance tracking for the crypto on-ramp custody layer.
 
