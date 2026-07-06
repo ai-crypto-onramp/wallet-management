@@ -1,0 +1,13 @@
+BEGIN;
+
+DROP TABLE IF EXISTS funding_requests;
+DROP TABLE IF EXISTS key_mappings;
+DROP TABLE IF EXISTS withdrawal_requests;
+DROP TABLE IF EXISTS nonces;
+DROP TABLE IF EXISTS utxos;
+DROP TABLE IF EXISTS balances;
+DROP TABLE IF EXISTS addresses;
+DROP TABLE IF EXISTS wallets;
+DROP TABLE IF EXISTS chains;
+
+COMMIT;

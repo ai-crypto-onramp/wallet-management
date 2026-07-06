@@ -220,6 +220,18 @@ Environment variables:
 ## Local Development
 
 ```bash
+# Start PostgreSQL 15 + Redis 7 for local dev and CI
+make compose-up
+
+# Bring the database to the full schema
+make migrate-up
+
+# Roll back all migrations
+make migrate-down
+
+# Create a new migration (sequential, .up.sql + .down.sql)
+make migrate-new name=add_foo
+
 # Build
 go build ./...
 
@@ -229,9 +241,18 @@ go run ./cmd/wallet-management
 # Test
 go test ./... -race -cover
 
+# Migration round-trip smoke test (requires PostgreSQL + golang-migrate CLI)
+make test-migration
+
 # Lint
 golangci-lint run
 
 # Generate protos
 buf generate
 ```
+
+The authoritative schema lives in `migrations/0001_init_schema.up.sql`; a
+mirror is kept at `internal/storage/postgres/schema.sql` for tests and
+`docker-compose` bootstrap. All eight tables described in the **Data model**
+table above are created with the columns, CHECK constraints, foreign keys,
+unique constraints, and dedup partial indexes specified there.
