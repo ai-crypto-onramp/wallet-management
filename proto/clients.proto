@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package wallet;
+
+option go_package = "github.com/ai-crypto-onramp/wallet-management/internal/pb;walletpb";
+
+// MPCSigningService is served by mpc-signing-service. wallet-management is a
+// client of Sign.
+service MPCSigningService {
+  // Sign runs MPC threshold signing over the supplied tx bytes for the given
+  // key_id and returns the signature.
+  rpc Sign(SignRequest) returns (SignResponse);
+}
+
+message SignRequest {
+  string key_id = 1;
+  bytes tx_bytes = 2;
+  string wallet_id = 3;
+}
+
+message SignResponse {
+  bytes signature = 1;
+  string signer_id = 2;
+}
+
+// GatewayService is served by blockchain-gateway. wallet-management is a
+// client of BroadcastTx.
+service GatewayService {
+  // BroadcastTx submits a signed transaction to the chain and returns the
+  // on-chain tx hash.
+  rpc BroadcastTx(BroadcastTxRequest) returns (BroadcastTxResponse);
+}
+
+message BroadcastTxRequest {
+  string chain = 1;
+  bytes tx_bytes = 2;
+  string wallet_id = 3;
+}
+
+message BroadcastTxResponse {
+  string tx_hash = 1;
+}

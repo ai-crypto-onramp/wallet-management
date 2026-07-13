@@ -1,6 +1,14 @@
 .PHONY: build test test-race test-integration lint coverage run \
 	migrate-up migrate-down migrate-new \
-	docker-build docker-run docker-up docker-down clean
+	docker-build docker-run docker-up docker-down clean proto
+
+# Regenerate Go stubs from proto/wallet.proto via buf.
+# Requires buf + protoc-gen-go + protoc-gen-go-grpc on PATH (run
+# `go install github.com/bufbuild/buf/cmd/buf@latest \
+#	google.golang.org/protobuf/cmd/protoc-gen-go@latest \
+#	google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest`).
+proto:
+	buf generate
 
 build:
 	go build -o bin/server ./cmd/wallet-management

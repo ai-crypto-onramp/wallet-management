@@ -363,7 +363,7 @@ with cooling-off key rotation.
   - `gateway.proto` — `OnConfirmation(event)`, `OnReorg(event)`,
     `BroadcastTx(signed_tx) → tx_hash`.
   *Deviation: all methods live in a single `wallet.proto`.*
-- [ ] `buf generate` to produce Go stubs; add `make proto` target.
+- [x] `buf generate` to produce Go stubs; add `make proto` target.
   *Open — the gRPC server/clients currently use a JSON codec with plain Go
   structs (`internal/api/grpc`), avoiding a protoc/buf build dependency.
   Switch to generated stubs when external consumers need the proto contract.*
@@ -376,7 +376,7 @@ with cooling-off key rotation.
   - `ResolveActive(walletID)` — returns the `current` key_id, or during cooling
     allows either (caller decides via MPC policy).
 - [x] Implement gRPC server: `ResolveKeyID`, `OnConfirmation`, `OnReorg`.
-- [ ] Implement gRPC clients: `MPCSigningClient.Sign`, `GatewayClient.BroadcastTx`.
+- [x] Implement gRPC clients: `MPCSigningClient.Sign`, `GatewayClient.BroadcastTx`.
   *Open — interfaces and mock implementations exist (`internal/grpcclient`)
   and are wired through the withdrawal flow; real clients require the
   mpc-signing-service and blockchain-gateway deployments (mTLS included).*
