@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package wallet;
+
+option go_package = "github.com/ai-crypto-onramp/wallet-management/internal/pb;walletpb";
+
+// WalletService is served by wallet-management for MPC Signing and
+// Blockchain Gateway integration.
+service WalletService {
+  // ResolveKeyID returns the active MPC key_id(s) bound to a wallet.
+  rpc ResolveKeyID(ResolveKeyIDRequest) returns (ResolveKeyIDResponse);
+  // OnConfirmation is a Blockchain Gateway confirmation callback.
+  rpc OnConfirmation(OnConfirmationRequest) returns (Empty);
+  // OnReorg is a Blockchain Gateway reorg callback.
+  rpc OnReorg(OnReorgRequest) returns (Empty);
+}
+
+message ResolveKeyIDRequest {
+  string wallet_id = 1;
+}
+
+message ResolveKeyIDResponse {
+  repeated string key_ids = 1;
+  string current_key_id = 2;
+}
+
+message OnConfirmationRequest {
+  string tx_hash = 1;
+  string wallet_id = 2;
+  string asset = 3;
+  string amount = 4;
+  int32 confirmations = 5;
+  int64 block_height = 6;
+  string event_id = 7;
+  bool is_finalized = 8;
+  string withdrawal_id = 9;
+}
+
+message OnReorgRequest {
+  int64 block_height = 1;
+  string wallet_id = 2;
+  string asset = 3;
+  string event_id = 4;
+  repeated string outpoints = 5;
+  string withdrawal_id = 6;
+}
+
+message Empty {}
