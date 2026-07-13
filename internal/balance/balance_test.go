@@ -225,6 +225,60 @@ func TestThresholdUnknownChain(t *testing.T) {
 	}
 }
 
+func TestOnConfirmedDecreaseHook(t *testing.T) {
+	svc, _ := newSvc(defaultCfg())
+	ctx := context.Background()
+	wID := uuid.New()
+
+	var gotWallet uuid.UUID
+	var gotAsset string
+	calls := 0
+	svc.OnConfirmedDecrease = func(walletID uuid.UUID, asset string) {
+		gotWallet, gotAsset = walletID, asset
+		calls++
+	}
+
+	// A confirmed deposit must NOT trigger the hook.
+	if err := svc.ApplyConfirmationEvent(ctx, &ConfirmationEvent{
+		WalletID: wID, Asset: "eth", Amount: "100", Confirmations: 12, BlockHeight: 1, EventID: "d1", Chain: wallet.ChainEthereum,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 {
+		t.Fatalf("hook fired on deposit: %d calls", calls)
+	}
+
+	// A pending (below-threshold) decrease must NOT trigger the hook.
+	if err := svc.ApplyConfirmationEvent(ctx, &ConfirmationEvent{
+		WalletID: wID, Asset: "eth", Amount: "-10", Confirmations: 3, BlockHeight: 2, EventID: "p1", Chain: wallet.ChainEthereum,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 {
+		t.Fatalf("hook fired on pending decrease: %d calls", calls)
+	}
+
+	// A confirmed decrease triggers the hook exactly once.
+	if err := svc.ApplyConfirmationEvent(ctx, &ConfirmationEvent{
+		WalletID: wID, Asset: "eth", Amount: "-50", Confirmations: 12, BlockHeight: 3, EventID: "w1", Chain: wallet.ChainEthereum,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || gotWallet != wID || gotAsset != "eth" {
+		t.Fatalf("expected 1 call for (%s, eth), got %d (%s, %s)", wID, calls, gotWallet, gotAsset)
+	}
+
+	// A duplicate event is idempotent and must not re-trigger.
+	if err := svc.ApplyConfirmationEvent(ctx, &ConfirmationEvent{
+		WalletID: wID, Asset: "eth", Amount: "-50", Confirmations: 12, BlockHeight: 3, EventID: "w1", Chain: wallet.ChainEthereum,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("hook re-fired on duplicate event: %d calls", calls)
+	}
+}
+
 func TestConcurrentEventApplication(t *testing.T) {
 	svc, _ := newSvc(defaultCfg())
 	ctx := context.Background()

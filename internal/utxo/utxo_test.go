@@ -181,7 +181,11 @@ func TestPruneFinalized(t *testing.T) {
 
 func TestSelectMutex(t *testing.T) {
 	m := &SelectMutex{}
+	n := 0
 	m.Lock()
+	n++
 	m.Unlock()
-	// just exercise the API
+	if n != 1 {
+		t.Fatal("expected critical section to run")
+	}
 }

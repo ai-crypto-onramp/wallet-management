@@ -1,5 +1,6 @@
 -- 0001_init_schema.down.sql
 DROP TABLE IF EXISTS balance_events;
+DROP TABLE IF EXISTS audit_seq;
 DROP TABLE IF EXISTS audit_outbox;
 DROP TABLE IF EXISTS funding_requests;
 DROP TABLE IF EXISTS key_mappings;

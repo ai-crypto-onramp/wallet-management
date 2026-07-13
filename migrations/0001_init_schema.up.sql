@@ -143,6 +143,11 @@ CREATE TABLE IF NOT EXISTS audit_outbox (
 CREATE INDEX IF NOT EXISTS audit_outbox_undelivered ON audit_outbox (seq) WHERE delivered = false;
 CREATE INDEX IF NOT EXISTS audit_outbox_wallet_seq ON audit_outbox (wallet_id, seq);
 
+CREATE TABLE IF NOT EXISTS audit_seq (
+    wallet_id UUID PRIMARY KEY,
+    seq       BIGINT NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS balance_events (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     wallet_id    UUID NOT NULL,

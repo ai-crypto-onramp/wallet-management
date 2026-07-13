@@ -45,6 +45,10 @@ type Service struct {
 	Config config.Config
 	// UTXORestore is invoked on reorg to restore spent UTXOs (wired in Stage 5).
 	UTXORestore func(ctx context.Context, outpoints []string) error
+	// OnConfirmedDecrease is invoked after a confirmed balance decreases so the
+	// funding service can evaluate a treasury top-up (wired in Stage 6). The
+	// caller decides whether to run it asynchronously.
+	OnConfirmedDecrease func(walletID uuid.UUID, asset string)
 }
 
 // NewService constructs a balance Service.
@@ -83,7 +87,7 @@ func (s *Service) ApplyConfirmationEvent(ctx context.Context, ev *ConfirmationEv
 	}
 
 	// read-modify-write inside a transaction so concurrent events do not lose updates.
-	return s.Store.InTx(ctx, func(ctx context.Context) error {
+	err := s.Store.InTx(ctx, func(ctx context.Context) error {
 		cur, err := s.Store.GetBalance(ctx, ev.WalletID, ev.Asset)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -126,6 +130,15 @@ func (s *Service) ApplyConfirmationEvent(ctx context.Context, ev *ConfirmationEv
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// A confirmed decrease (e.g. a settled withdrawal) may drop a hot wallet
+	// below its funding threshold — let the funding service evaluate.
+	if s.OnConfirmedDecrease != nil && s.isConfirmed(ev) && parseDec(ev.Amount) < 0 {
+		s.OnConfirmedDecrease(ev.WalletID, ev.Asset)
+	}
+	return nil
 }
 
 // ApplyReorgEvent demotes confirmed value back to pending for the reorged block

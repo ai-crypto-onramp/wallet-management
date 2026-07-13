@@ -63,7 +63,7 @@ func (c *HTTPTreasuryClient) RequestFunding(ctx context.Context, req *TreasuryRe
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("treasury rejected funding request: %d %s", resp.StatusCode, string(b))

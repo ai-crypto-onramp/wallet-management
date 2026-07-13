@@ -60,14 +60,14 @@ func TablesExist(ctx context.Context, db *sql.DB) ([]string, error) {
 	expected := []string{
 		"wallets", "addresses", "balances", "utxos", "nonces",
 		"withdrawal_requests", "key_mappings", "funding_requests",
-		"audit_outbox", "balance_events",
+		"audit_outbox", "audit_seq", "balance_events",
 	}
 	rows, err := db.QueryContext(ctx,
 		`SELECT table_name FROM information_schema.tables WHERE table_schema='public'`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	present := map[string]bool{}
 	for rows.Next() {
 		var t string

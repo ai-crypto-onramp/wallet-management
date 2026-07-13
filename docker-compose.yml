@@ -1,0 +1,49 @@
+services:
+  wallet-management:
+    build: .
+    ports:
+      - "${WM_PORT:-8080}:8080"
+      - "${WM_GRPC_PORT:-9090}:9090"
+    environment:
+      DB_URL: postgres://wallet:wallet@postgres:5432/wallet?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      # Local-dev-only public extended keys (same vectors as the test suite).
+      # Production loads per-chain xpubs from a secrets store instead.
+      EVM_XPUB: ${EVM_XPUB:-xpub6CeDpm2b5qtk96oy8yvM572W6cLZSvU5vnpKmKPypbfFwXo86SyT7VtfwWtMZAgZ5eKVMU9NnULt91HBFw9j62wJrcoc1ZRWiNvoorwBRXL}
+      BTC_XPUB: ${BTC_XPUB:-xpub6C1HVMz946r433QEjZGpYYWYcspxXXBPys5PBGkmQboRXE6RLfFiStEkKbWKCZaPgDrzZh9nUEunxuiuy6MNdw23du2Ek7GoKYMJVH8eK5E}
+      SOL_XPUB: ${SOL_XPUB:-11111111111111111111111111111111}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: wallet
+      POSTGRES_DB: wallet
+    ports:
+      # Override the host port when 5432 is taken locally: WM_PG_PORT=55432 make docker-up
+      - "${WM_PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet -d wallet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${WM_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

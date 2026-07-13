@@ -319,7 +319,7 @@ func parseID(r *http.Request) (uuid.UUID, error) {
 
 func decodeJSON(r *http.Request, v any) error {
 	dec := json.NewDecoder(r.Body)
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	return dec.Decode(v)
 }
 

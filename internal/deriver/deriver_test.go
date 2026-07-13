@@ -81,9 +81,9 @@ func TestEVMDeriveKnownVectors(t *testing.T) {
 	}
 	ctx := context.Background()
 	want := []string{
-		"0x022B971dFf0C43305e691DEd7A14367Af19d6407",
-		"0xBB7A182240010703DC81D6B1eFF630Ca02a169fD",
-		"0xecf722A6a8EE18F5a9d3c00d168bE3d0d068732b",
+		"0x022b971dFF0C43305e691DEd7a14367AF19D6407",
+		"0xbb7A182240010703dc81D6b1EFf630CA02a169FD",
+		"0xECf722a6a8EE18F5A9D3C00D168be3D0d068732b",
 	}
 	for i, w := range want {
 		got, err := d.DeriveAt(ctx, uuid.New(), ChainEthereum, i, 0)
@@ -100,13 +100,28 @@ func TestEVMDeriveKnownVectors(t *testing.T) {
 		if got.Index != i || got.Change != 0 {
 			t.Errorf("index/change mismatch: %+v", got)
 		}
-		// EIP-55: address must have a mix of cases if it has letters
-		if strings.ContainsAny(got.Address, "abcdef") && strings.ContainsAny(got.Address, "ABCDEF") {
-			// ok — mixed case confirms checksum capitalization applied
+		// EIP-55: re-applying the checksum to the address must be a no-op.
+		if cs := eip55Checksum(got.Address); cs != got.Address {
+			t.Errorf("EVM[%d]: checksum not canonical: %s vs %s", i, got.Address, cs)
 		}
 		// public-only: no private key bytes appear in result (just sanity check on Address string)
 		if strings.Contains(got.Address, "priv") {
 			t.Error("address contains suspicious substring")
+		}
+	}
+}
+
+func TestEIP55CanonicalVectors(t *testing.T) {
+	t.Parallel()
+	// Test vectors from EIP-55 itself.
+	for _, want := range []string{
+		"0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+		"0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+		"0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+		"0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+	} {
+		if got := eip55Checksum(strings.ToLower(want)); got != want {
+			t.Errorf("eip55Checksum: expected %s got %s", want, got)
 		}
 	}
 }

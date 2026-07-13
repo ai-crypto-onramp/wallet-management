@@ -139,14 +139,13 @@ func (s *Store) ListWallets(ctx context.Context, chainF, typeF, stateF string) (
 	if stateF != "" {
 		q += fmt.Sprintf(" AND state=$%d", n)
 		args = append(args, stateF)
-		n++
 	}
 	q += " ORDER BY created_at"
 	rows, err := s.query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*domain.Wallet
 	for rows.Next() {
 		w := &domain.Wallet{}
@@ -198,7 +197,7 @@ func (s *Store) ListAddresses(ctx context.Context, walletID uuid.UUID) ([]*domai
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*domain.Address
 	for rows.Next() {
 		a := &domain.Address{}
@@ -256,7 +255,7 @@ func (s *Store) ListBalances(ctx context.Context, walletID uuid.UUID) ([]*storag
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*storage.Balance
 	for rows.Next() {
 		b := &storage.Balance{}
@@ -302,7 +301,7 @@ func (s *Store) ListFreeUTXOs(ctx context.Context, walletID uuid.UUID) ([]*stora
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*storage.UTXO
 	for rows.Next() {
 		u := &storage.UTXO{}
@@ -464,7 +463,7 @@ func (s *Store) ResolveActiveKey(ctx context.Context, walletID uuid.UUID) ([]*st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*storage.KeyMapping
 	for rows.Next() {
 		m := &storage.KeyMapping{}
@@ -482,7 +481,7 @@ func (s *Store) ResolveActiveKey(ctx context.Context, walletID uuid.UUID) ([]*st
 func (s *Store) RotateKeyMapping(ctx context.Context, walletID uuid.UUID, newKeyID string, cooling time.Duration) error {
 	activeTo := time.Now().Add(cooling)
 	return s.InTx(ctx, func(ctx context.Context) error {
-		_, err := s.exec(ctx, `UPDATE key_mappings SET rotation_state='cooling', active_to=$3 WHERE wallet_id=$1 AND rotation_state='current'`, walletID, "", activeTo)
+		_, err := s.exec(ctx, `UPDATE key_mappings SET rotation_state='cooling', active_to=$2 WHERE wallet_id=$1 AND rotation_state='current'`, walletID, activeTo)
 		if err != nil {
 			return err
 		}
@@ -535,7 +534,7 @@ func (s *Store) ListUndeliveredAuditEvents(ctx context.Context, limit int) ([]*s
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*storage.AuditOutboxEvent
 	for rows.Next() {
 		e := &storage.AuditOutboxEvent{}
@@ -553,10 +552,15 @@ func (s *Store) MarkAuditDelivered(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *Store) NextAuditSeq(ctx context.Context, walletID uuid.UUID) (int64, error) {
-	var seq sql.NullInt64
-	err := s.queryRow(ctx, `SELECT COALESCE(MAX(seq), 0) + 1 FROM audit_outbox WHERE wallet_id=$1`, walletID).Scan(&seq)
+	// A dedicated counter row reserves the sequence atomically; MAX(seq)+1 over
+	// audit_outbox would hand the same value to concurrent emitters.
+	var seq int64
+	err := s.queryRow(ctx,
+		`INSERT INTO audit_seq (wallet_id, seq) VALUES ($1, 1)
+		 ON CONFLICT (wallet_id) DO UPDATE SET seq = audit_seq.seq + 1
+		 RETURNING seq`, walletID).Scan(&seq)
 	if err != nil {
 		return 0, err
 	}
-	return seq.Int64, nil
+	return seq, nil
 }

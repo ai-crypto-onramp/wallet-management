@@ -1,21 +1,35 @@
 package main
 
 import (
+	"net"
 	"testing"
 )
 
-// TestRunFailsWithoutConfig exercises the run() wiring path. Without a real
-// Postgres or valid xpubs, run() returns an error (from deriver.NewEVM when
-// the placeholder xpub fails to parse, or from a downstream dependency). The
-// important behavior is that run() does not block or panic.
+// TestRunFailsWithoutConfig exercises the run() wiring path up to server
+// startup. The test holds a port itself and points PORT/GRPC_PORT at it so
+// the listeners fail deterministically — otherwise run() would start
+// successfully and block on the shutdown signal, hanging the test whenever
+// the default ports happen to be free on the host.
 func TestRunFailsWithoutConfig(t *testing.T) {
-	// Force the EVM deriver to receive an invalid xpub so run() returns an
-	// error early (after the lazy postgres open and the redis fallback).
-	t.Setenv("EVM_XPUB", "")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to open listener: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+	_, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PORT", port)
+	t.Setenv("GRPC_PORT", port)
+	// Unreachable Postgres and Redis: migrations warn and continue, the cache
+	// and locker fall back to in-memory — no dependence on local services.
 	t.Setenv("DB_URL", "postgres://nonexistent:none@127.0.0.1:1/db?sslmode=disable&connect_timeout=1")
-	t.Setenv("REDIS_URL", "")
+	t.Setenv("REDIS_URL", "redis://127.0.0.1:1/0")
+
 	if err := run(); err == nil {
-		t.Fatal("expected run() to return an error without valid config")
+		t.Fatal("expected run() to return an error when its port is taken")
 	}
 }
 

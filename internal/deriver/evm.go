@@ -2,7 +2,6 @@ package deriver
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -82,7 +81,11 @@ func (d *EVMDeriver) deriveUncached(index int) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("derive external chain: %w", err)
 	}
-	child, err := external.Derive(uint32(index))
+	childIdx, err := nonHardened(index)
+	if err != nil {
+		return "", err
+	}
+	child, err := external.Derive(childIdx)
 	if err != nil {
 		return "", fmt.Errorf("derive index %d: %w", index, err)
 	}
@@ -115,11 +118,13 @@ func evmAddressFromCompressedPubkey(compressed []byte) string {
 }
 
 // eip55Checksum applies the EIP-55 checksum capitalization to a 40-char
-// lowercase hex address (without 0x prefix).
+// lowercase hex address (without 0x prefix). Per EIP-55, capitalization is
+// driven by the Keccak-256 hash of the lowercase hex address.
 func eip55Checksum(addrLower string) string {
 	addrLower = strings.ToLower(strings.TrimPrefix(addrLower, "0x"))
-	h := sha256.Sum256([]byte(addrLower))
-	hh := hex.EncodeToString(h[:])
+	k := sha3.NewLegacyKeccak256()
+	k.Write([]byte(addrLower))
+	hh := hex.EncodeToString(k.Sum(nil))
 	var out strings.Builder
 	out.Grow(42)
 	out.WriteString("0x")

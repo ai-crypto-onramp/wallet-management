@@ -8,16 +8,70 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22.x'
+          go-version: '1.26.x'
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.25.x', '1.26.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./... -race -coverprofile=coverage.out -coverpkg=./...
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: wallet
+          POSTGRES_PASSWORD: wallet
+          POSTGRES_DB: wallet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wallet -d wallet"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - run: go test ./... -race -tags=integration -coverprofile=coverage.out -coverpkg=./...
+        env:
+          TEST_DB_URL: postgres://wallet:wallet@localhost:5432/wallet?sslmode=disable
+          TEST_REDIS_URL: redis://localhost:6379/0
+      - name: Enforce coverage gate (>= 80%)
+        run: |
+          total=$(go tool cover -func=coverage.out | tail -1 | awk '{gsub(/%/, "", $NF); print $NF}')
+          echo "total coverage: ${total}%"
+          awk -v t="$total" 'BEGIN { exit (t >= 80.0 ? 0 : 1) }'
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:

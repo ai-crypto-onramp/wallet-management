@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {
@@ -20,7 +21,12 @@ func newMux() *http.ServeMux {
 
 // run starts the HTTP server on addr and blocks until the server exits.
 func run(addr string) error {
-	return http.ListenAndServe(addr, newMux())
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           newMux(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	return srv.ListenAndServe()
 }
 
 func main() {

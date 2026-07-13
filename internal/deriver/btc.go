@@ -84,11 +84,19 @@ func (d *BTCDeriver) deriveUncached(index, change int) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse xpub: %w", err)
 	}
-	changeBranch, err := acc.Derive(uint32(change))
+	changeIdx, err := nonHardened(change)
+	if err != nil {
+		return "", err
+	}
+	changeBranch, err := acc.Derive(changeIdx)
 	if err != nil {
 		return "", fmt.Errorf("derive change chain %d: %w", change, err)
 	}
-	child, err := changeBranch.Derive(uint32(index))
+	childIdx, err := nonHardened(index)
+	if err != nil {
+		return "", err
+	}
+	child, err := changeBranch.Derive(childIdx)
 	if err != nil {
 		return "", fmt.Errorf("derive index %d: %w", index, err)
 	}

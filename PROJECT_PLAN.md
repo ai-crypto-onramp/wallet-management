@@ -8,7 +8,11 @@ Policy/Risk Engine whitelisting, and MPC + Blockchain Gateway integration.
 This plan decomposes the build into ordered, independently verifiable stages
 that mirror the data and call-flow dependencies described in the README.
 
-## Stage 1
+> **Status (2026-07-13):** Stages 1–10 are implemented and verified against this
+> plan. Two Stage 8 items remain open (buf-generated protobuf stubs and real
+> gRPC client implementations); the service currently uses a JSON codec with
+> plain Go structs over gRPC and mock MPC/Gateway clients until those external
+> services exist. Deviations from the original plan are noted inline.
 
 ## Stage 1 — Database Schema & Migrations
 
@@ -20,9 +24,11 @@ against a stable data model.
 
 ### Tasks
 
-- [ ] Pick a migration tool (e.g. `golang-migrate` or `goose`) and add it to
+- [x] Pick a migration tool (e.g. `golang-migrate` or `goose`) and add it to
       `Makefile` targets (`migrate-up`, `migrate-down`, `migrate-new`).
-- [ ] Create `migrations/0001_init_schema.up.sql` and the matching down
+      *Deviation: a minimal embed-based runner (`internal/migrations`) plus a
+      `cmd/migrate` CLI replaces the external tool; Makefile targets exist.*
+- [x] Create `migrations/0001_init_schema.up.sql` and the matching down
       migration with the following tables and constraints:
   - `wallets` — `id UUID PK`, `chain text`, `type text CHECK in
     (hot,warm,cold)`, `label text`, `state text CHECK in
@@ -55,18 +61,18 @@ against a stable data model.
     `asset text`, `amount numeric`, `state text CHECK in
     (requested,approved,settled,rejected)`, `treasury_batch_id text`,
     `created_at timestamptz`, `updated_at timestamptz`.
-- [ ] Add idempotency / dedup unique indexes:
+- [x] Add idempotency / dedup unique indexes:
   - `withdrawal_requests (wallet_id, to_address, amount, asset)` partial where
     `state` IN (pending, whitelisted, signed, broadcast).
   - `funding_requests (wallet_id, asset, state)` partial where state =
     `requested`.
-- [ ] Add seed/reference data: a `chains` lookup enum or check list
+- [x] Add seed/reference data: a `chains` lookup enum or check list
   (`ethereum`, `polygon`, `arbitrum`, `base`, `optimism`, `solana`, `bitcoin`).
-- [ ] Create `internal/storage/postgres/schema.sql` with the same DDL for tests
+- [x] Create `internal/storage/postgres/schema.sql` with the same DDL for tests
   and `docker-compose` bootstrap.
-- [ ] Write a migration smoke test that runs up→down→up and asserts all tables
+- [x] Write a migration smoke test that runs up→down→up and asserts all tables
   exist / are dropped / exist again.
-- [ ] Add `docker-compose.yml` (or extend existing) with PostgreSQL 15 + Redis 7
+- [x] Add `docker-compose.yml` (or extend existing) with PostgreSQL 15 + Redis 7
   for local dev and CI.
 
 ### Acceptance criteria
@@ -88,41 +94,41 @@ only public derivation outputs are persisted.
 
 ### Tasks
 
-- [ ] Define `internal/wallet` domain types: `Wallet`, `Address`,
+- [x] Define `internal/wallet` domain types: `Wallet`, `Address`,
   `WalletState`, `WalletType`, `Chain`.
-- [ ] Implement `WalletRepository` (Postgres) with `Create`, `Get`,
+- [x] Implement `WalletRepository` (Postgres) with `Create`, `Get`,
   `UpdateState`, `List` (filter by chain/type/state).
-- [ ] Implement `WalletService` with:
+- [x] Implement `WalletService` with:
   - `Create(ctx, {chain, type, label})` — validates chain/type, persists wallet
     in `active` state, allocates a `key_id` placeholder (bound in Stage 7).
   - `Get(ctx, id)` — returns wallet + bound `key_id` from `key_mappings` (or
     `wallets.key_id`).
   - `SetState(ctx, id, state)` — `active`↔`paused`, terminal `retired`.
-- [ ] Define a `Deriver` interface:
+- [x] Define a `Deriver` interface:
   ```go
   type Deriver interface {
       DeriveNext(ctx context.Context, walletID uuid.UUID, chain Chain) (Address, error)
   }
   ```
-- [ ] Implement `EVMDeriver`:
+- [x] Implement `EVMDeriver`:
   - BIP-44 path `m/44'/60'/0'/0/index`, monotonic index from `addresses` table.
   - Address is Keccak-256 of the compressed pubkey, EIP-55 checksummed.
   - Cache derived pubkey in Redis (`DERIVATION_CACHE_TTL`) to hit <10 ms p99.
-- [ ] Implement `SolanaDeriver`:
+- [x] Implement `SolanaDeriver`:
   - ed25519 BIP-44 path `m/44'/501'/0'/0'`, one derived address per wallet.
   - base58 encode.
-- [ ] Implement `BTCDeriver`:
+- [x] Implement `BTCDeriver`:
   - BIP-44/49/84 with change-chain separation (`/0` receive, `/1` change).
   - bech32 native SegWit (`bc1q...`).
   - Track derivation index per wallet + change-chain; record gap-limit info.
-- [ ] Implement `AddressRepository` with atomic `ReserveNextIndex` (row lock on
+- [x] Implement `AddressRepository` with atomic `ReserveNextIndex` (row lock on
   per-wallet index counter) and `Insert`.
-- [ ] REST handlers under `internal/api/rest`:
+- [x] REST handlers under `internal/api/rest`:
   - `POST /v1/wallets`
   - `GET /v1/wallets/:id`
   - `GET /v1/wallets/:id/addresses?derive=true`
   - `POST /v1/wallets/:id/addresses/derive`
-- [ ] Add per-deriver unit tests with known BIP-44 test vectors (vectors from
+- [x] Add per-deriver unit tests with known BIP-44 test vectors (vectors from
   BIP-44 / SLIP-44 / known tooling for Ethereum, Solana, Bitcoin).
 
 ### Acceptance criteria
@@ -147,21 +153,21 @@ receive-count-based), support on-demand derivation, and mark retired addresses
 
 ### Tasks
 
-- [ ] Add config: `DEFAULT_ADDRESS_ROTATION_DAYS`, plus per-wallet override
+- [x] Add config: `DEFAULT_ADDRESS_ROTATION_DAYS`, plus per-wallet override
   fields (`rotation_days int NULL`, `rotation_after_receives int NULL`).
-- [ ] Implement `RotationPolicy` service:
+- [x] Implement `RotationPolicy` service:
   - On `GET /v1/wallets/:id/addresses?derive=true`: if the current active
     address is older than `rotation_days` OR has received
     `rotation_after_receives` deposits (counted from `balances`/`addresses`),
     mark it `deprecated` and derive the next active address.
   - On-demand `POST /v1/wallets/:id/addresses/derive` always rotates.
-- [ ] Ensure only one `active` address per wallet at a time (DB partial unique
+- [x] Ensure only one `active` address per wallet at a time (DB partial unique
   index `WHERE state='active'`).
-- [ ] Keep `deprecated` addresses queryable and valid for collection; exclude
+- [x] Keep `deprecated` addresses queryable and valid for collection; exclude
   them from new share-outs.
-- [ ] Emit a `wallet.address.rotated` audit event (handled in Stage 8, stub the
+- [x] Emit a `wallet.address.rotated` audit event (handled in Stage 8, stub the
   hook now).
-- [ ] Tests: time-based rotation, count-based rotation, on-demand rotation,
+- [x] Tests: time-based rotation, count-based rotation, on-demand rotation,
   concurrent derive requests (Redis lock on wallet_id).
 
 ### Acceptance criteria
@@ -182,21 +188,23 @@ events plus a 60 s polling backstop.
 
 ### Tasks
 
-- [ ] Add config: `CONFIRMATIONS_REQUIRED_EVM`, `CONFIRMATIONS_REQUIRED_BTC`,
+- [x] Add config: `CONFIRMATIONS_REQUIRED_EVM`, `CONFIRMATIONS_REQUIRED_BTC`,
   `CONFIRMATIONS_REQUIRED_SOL` (finalized slot).
-- [ ] Implement `BalanceRepository` with upsert on
+- [x] Implement `BalanceRepository` with upsert on
   `(wallet_id, asset)`: `confirmed`, `pending`, `locked`, `last_block_seen`.
-- [ ] Implement `BalanceService`:
+- [x] Implement `BalanceService`:
   - `ApplyConfirmationEvent(event)` — for EVM/BTC, move value from `pending` to
     `confirmed` once `confirmations >= threshold`; for Solana, only on finalized
     slot.
   - `ApplyReorgEvent(event)` — demote confirmed back to pending for blocks
     beyond reorg depth; trigger UTXO restore (Stage 5).
   - `GetBalances(walletID)` returns confirmed + pending per asset.
-- [ ] Polling reconciler: per-wallet 60 s full pull from Blockchain Gateway
+- [x] Polling reconciler: per-wallet 60 s full pull from Blockchain Gateway
   (Stage 7 integration); for now define the gRPC client interface and stub.
-- [ ] REST handler `GET /v1/wallets/:id/balances`.
-- [ ] Tests: EVM 12-conf threshold, BTC 6-conf, Solana finalized-only, reorg
+  *The client interface and stub exist; the 60 s loop lands together with the
+  real Gateway client (see the open Stage 8 item).*
+- [x] REST handler `GET /v1/wallets/:id/balances`.
+- [x] Tests: EVM 12-conf threshold, BTC 6-conf, Solana finalized-only, reorg
   demotion, idempotent event application (dedup on
   `(wallet_id, asset, block_height, event_id)`).
 
@@ -218,9 +226,9 @@ and spent-on-broadcast / restore-on-reorg.
 
 ### Tasks
 
-- [ ] Implement `NonceRepository` (Postgres `nonces` table, optimistic
+- [x] Implement `NonceRepository` (Postgres `nonces` table, optimistic
   concurrency via `version`).
-- [ ] Implement `NonceService`:
+- [x] Implement `NonceService`:
   - `ReserveNonce(ctx, walletID, chain)` — acquires Redis lock
     `nonce:lock:{wallet_id}:{chain}`, increments `pending_nonce`,
     returns reserved value; releases lock.
@@ -228,8 +236,8 @@ and spent-on-broadcast / restore-on-reorg.
   - `RollbackNonce(ctx, walletID, chain, nonce)` — releases the reserved nonce
     without advancing broadcast (gap-safe via monotonically increasing
     `pending_nonce`).
-- [ ] Implement `UTXORepository` (Postgres `utxos`).
-- [ ] Implement `UTXOService`:
+- [x] Implement `UTXORepository` (Postgres `utxos`).
+- [x] Implement `UTXOService`:
   - `SelectForAmount(walletID, asset, amount)` — greedy/branch-and-bound
     selection over `lock_state='free'`, atomically marks selected UTXOs
     `locked` (within a tx).
@@ -237,9 +245,9 @@ and spent-on-broadcast / restore-on-reorg.
     `tx_hash`.
   - `RestoreOnReorg(outpoints)` — flip spent→free, reset `spent_at`.
   - `PruneFinalized(outpoints)` — delete or archive once finality is reached.
-- [ ] Integration: wire `NonceService` and `UTXOService` into the withdrawal
+- [x] Integration: wire `NonceService` and `UTXOService` into the withdrawal
   construct path (Stage 7) — for now expose service APIs and unit tests.
-- [ ] Tests: concurrent nonce reservation (10 goroutines, no gaps/dupes),
+- [x] Tests: concurrent nonce reservation (10 goroutines, no gaps/dupes),
   UTXO selection under concurrent withdrawal attempts (no double-spend),
   reorg restore path.
 
@@ -262,10 +270,10 @@ callbacks.
 
 ### Tasks
 
-- [ ] Implement `FundingRequestRepository` (Postgres `funding_requests`) with
+- [x] Implement `FundingRequestRepository` (Postgres `funding_requests`) with
   idempotency: one `requested` row per `(wallet_id, asset)` (partial unique
   index from Stage 1).
-- [ ] Implement `FundingService`:
+- [x] Implement `FundingService`:
   - `EvaluateAndRequest(ctx, walletID, asset)` — if wallet is `hot`, confirmed
     balance < threshold, and no open `requested` row exists, insert a new
     `funding_requests` row in state `requested` and POST to
@@ -273,11 +281,11 @@ callbacks.
     (`fr:{wallet_id}:{asset}:{request_uuid}`).
   - `MarkApproved(id, treasuryBatchID)`, `MarkSettled(id)`,
     `MarkRejected(id, reason)` — state machine transitions.
-- [ ] Trigger evaluation from the balance update path (Stage 4): whenever a
+- [x] Trigger evaluation from the balance update path (Stage 4): whenever a
   confirmed balance decreases, call `EvaluateAndRequest` asynchronously.
-- [ ] REST handler `POST /v1/wallets/:id/funding-request` for manual trigger
+- [x] REST handler `POST /v1/wallets/:id/funding-request` for manual trigger
   with body `{asset, amount, reason}`.
-- [ ] Tests: threshold-not-crossed (no request), threshold-crossed (one
+- [x] Tests: threshold-not-crossed (no request), threshold-crossed (one
   request), duplicate suppression, state transitions, treasury REST client
   retry with idempotency key.
 
@@ -303,10 +311,10 @@ confirmed | failed`.
 
 ### Tasks
 
-- [ ] Implement `WithdrawalRepository` (Postgres `withdrawal_requests`) with
+- [x] Implement `WithdrawalRepository` (Postgres `withdrawal_requests`) with
   idempotency on `(wallet_id, to_address, amount, asset)` while in a non-final
   state.
-- [ ] Implement `WithdrawalService`:
+- [x] Implement `WithdrawalService`:
   - `Create(ctx, {wallet_id, to_address, amount, asset})` — insert in state
     `pending`, call Policy Engine `/v1/whitelist/check` synchronously
     (`POLICY_RISK_ENGINE_URL`); on reject → state `failed` with reason
@@ -320,11 +328,11 @@ confirmed | failed`.
     `BroadcastTx`; on ack → state `broadcast`, store `tx_hash`.
   - `Confirm(ctx, id, event)` — on confirmation event from Blockchain Gateway →
     state `confirmed`; on failure → `failed`.
-- [ ] REST handlers: `POST /v1/withdrawals`, `GET /v1/withdrawals/:id`.
-- [ ] gRPC server methods for Blockchain Gateway confirmation callbacks
+- [x] REST handlers: `POST /v1/withdrawals`, `GET /v1/withdrawals/:id`.
+- [x] gRPC server methods for Blockchain Gateway confirmation callbacks
   (`OnConfirmation`, `OnReorg`) and for Transaction Orchestrator
   (`ConstructWithdrawal`).
-- [ ] Tests: whitelist reject path, whitelist approve + EVM sign + broadcast
+- [x] Tests: whitelist reject path, whitelist approve + EVM sign + broadcast
   happy path, BTC UTXO selection + sign + broadcast, broadcast failure rolls
   back nonce / unlocks UTXOs, reorg confirmation rollback.
 
@@ -350,12 +358,16 @@ with cooling-off key rotation.
 
 ### Tasks
 
-- [ ] Define protobufs under `proto/`:
+- [x] Define protobufs under `proto/`:
   - `wallet.proto` — `ResolveKeyID(wallet_id) → key_id`, used by MPC Signing.
   - `gateway.proto` — `OnConfirmation(event)`, `OnReorg(event)`,
     `BroadcastTx(signed_tx) → tx_hash`.
+  *Deviation: all methods live in a single `wallet.proto`.*
 - [ ] `buf generate` to produce Go stubs; add `make proto` target.
-- [ ] Implement `KeyMappingRepository` (Postgres `key_mappings`) and
+  *Open — the gRPC server/clients currently use a JSON codec with plain Go
+  structs (`internal/api/grpc`), avoiding a protoc/buf build dependency.
+  Switch to generated stubs when external consumers need the proto contract.*
+- [x] Implement `KeyMappingRepository` (Postgres `key_mappings`) and
   `KeyMappingService`:
   - `Bind(walletID, keyID)` at provisioning.
   - `Rotate(walletID, newKeyID)` — set old mapping `rotation_state=cooling`
@@ -363,12 +375,15 @@ with cooling-off key rotation.
     After cooling period, old mapping → `retired`.
   - `ResolveActive(walletID)` — returns the `current` key_id, or during cooling
     allows either (caller decides via MPC policy).
-- [ ] Implement gRPC server: `ResolveKeyID`, `OnConfirmation`, `OnReorg`.
+- [x] Implement gRPC server: `ResolveKeyID`, `OnConfirmation`, `OnReorg`.
 - [ ] Implement gRPC clients: `MPCSigningClient.Sign`, `GatewayClient.BroadcastTx`.
-- [ ] Wire Stage 4 balance events, Stage 5 nonce/UTXO, and Stage 7 withdrawal
+  *Open — interfaces and mock implementations exist (`internal/grpcclient`)
+  and are wired through the withdrawal flow; real clients require the
+  mpc-signing-service and blockchain-gateway deployments (mTLS included).*
+- [x] Wire Stage 4 balance events, Stage 5 nonce/UTXO, and Stage 7 withdrawal
   flows to the gRPC clients.
-- [ ] Config: `MPC_SIGNING_URL`, `BLOCKCHAIN_GATEWAY_URL`, cooling period.
-- [ ] Integration tests with mock gRPC servers for the full withdrawal saga.
+- [x] Config: `MPC_SIGNING_URL`, `BLOCKCHAIN_GATEWAY_URL`, cooling period.
+- [x] Integration tests with mock gRPC servers for the full withdrawal saga.
 
 ### Acceptance criteria
 
@@ -391,23 +406,23 @@ at-least-once delivery and ordered per wallet.
 
 ### Tasks
 
-- [ ] Define the event schema (versioned JSON): `wallet.created`,
+- [x] Define the event schema (versioned JSON): `wallet.created`,
   `wallet.state_changed`, `wallet.address.derived`, `wallet.address.rotated`,
   `wallet.balance.updated`, `wallet.funding.requested`,
   `wallet.funding.settled`, `withdrawal.created`,
   `withdrawal.whitelist_checked`, `withdrawal.signed`,
   `withdrawal.broadcast`, `withdrawal.confirmed`,
   `withdrawal.failed`, `key.rotated`.
-- [ ] Implement `AuditEmitter` with batching + async flush to
+- [x] Implement `AuditEmitter` with batching + async flush to
   `AUDIT_EVENT_LOG_URL`; per-wallet ordering via a Redis stream or sequence
   number.
-- [ ] Outbox pattern: persist events in an `audit_outbox` table within the same
+- [x] Outbox pattern: persist events in an `audit_outbox` table within the same
   DB tx as the state change; a background worker drains the outbox to the Audit
   Event Log.
-- [ ] Add `audit_outbox` table migration.
-- [ ] At-least-once delivery with idempotency key `event_id` (UUID) so the
+- [x] Add `audit_outbox` table migration.
+- [x] At-least-once delivery with idempotency key `event_id` (UUID) so the
   Audit Log can dedup.
-- [ ] Tests: outbox write within tx (rollback aborts event), outbox drain
+- [x] Tests: outbox write within tx (rollback aborts event), outbox drain
   retry on failure, ordering per wallet, dedup on redelivery.
 
 ### Acceptance criteria
@@ -428,22 +443,22 @@ Compose, and CI pipeline that runs the full matrix.
 
 ### Tasks
 
-- [ ] Integration test harness using `docker-compose` (Postgres + Redis) with
+- [x] Integration test harness using `docker-compose` (Postgres + Redis) with
   testcontainers or `docker compose up --wait` in CI.
-- [ ] Test suites per stage: wallet, derivation (per chain), rotation, balance,
+- [x] Test suites per stage: wallet, derivation (per chain), rotation, balance,
   nonce, UTXO, funding, withdrawal, key mapping, audit.
-- [ ] Coverage gate in `codecov.yml` and CI: fail build if coverage < 80%.
-- [ ] `golangci-lint run` clean; enable linters: `govet`, `staticcheck`,
+- [x] Coverage gate in `codecov.yml` and CI: fail build if coverage < 80%.
+- [x] `golangci-lint run` clean; enable linters: `govet`, `staticcheck`,
   `errcheck`, `gosec`, `gocyclo`, `misspell`.
-- [ ] `Dockerfile` multi-stage build (already present — verify and tighten:
+- [x] `Dockerfile` multi-stage build (already present — verify and tighten:
   non-root user, distroless or alpine final, HEALTHCHECK).
-- [ ] `docker-compose.yml` with `wallet-management`, `postgres`, `redis`,
+- [x] `docker-compose.yml` with `wallet-management`, `postgres`, `redis`,
   healthchecks, and volume for pg data.
-- [ ] CI workflow matrix: Go 1.22 / 1.23, PostgreSQL 15, Redis 7; jobs:
+- [x] CI workflow matrix: Go 1.22 / 1.23, PostgreSQL 15, Redis 7; jobs:
   lint, unit, integration, coverage upload to Codecov.
-- [ ] `Makefile` targets: `test`, `test-race`, `test-integration`, `lint`,
+- [x] `Makefile` targets: `test`, `test-race`, `test-integration`, `lint`,
   `coverage`, `run`, `docker-up`, `docker-down`.
-- [ ] Load test skeleton: derivation 500/s and balance read 2,000/s benchmarks
+- [x] Load test skeleton: derivation 500/s and balance read 2,000/s benchmarks
   (`go test -bench`).
 
 ### Acceptance criteria

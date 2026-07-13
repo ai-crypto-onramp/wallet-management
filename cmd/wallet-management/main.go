@@ -32,6 +32,7 @@ import (
 	"github.com/ai-crypto-onramp/wallet-management/internal/wallet"
 	"github.com/ai-crypto-onramp/wallet-management/internal/withdrawal"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -48,7 +49,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -108,6 +109,15 @@ func run() error {
 
 	withdrawalSvc := withdrawal.NewService(st, walletSvc, nonceSvc, utxoSvc, policyClient, signer, gw, keymapSvc, emitter)
 	balanceSvc.UTXORestore = utxoSvc.RestoreOnReorg
+	balanceSvc.OnConfirmedDecrease = func(walletID uuid.UUID, asset string) {
+		go func() {
+			fctx, fcancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer fcancel()
+			if err := fundingSvc.EvaluateAndRequest(fctx, walletID, asset); err != nil {
+				log.Printf("funding evaluation for wallet %s asset %s: %v", walletID, asset, err)
+			}
+		}()
+	}
 
 	restSrv := restapi.NewServer(":"+cfg.Port, restapi.Deps{
 		Wallets:    walletSvc,

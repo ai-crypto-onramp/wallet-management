@@ -79,6 +79,15 @@ func (r *Registry) For(chain Chain) (Deriver, error) {
 	return nil, fmt.Errorf("no deriver for chain %q", chain)
 }
 
+// nonHardened converts a derivation index to uint32, rejecting values outside
+// the non-hardened BIP-32 range [0, 2^31).
+func nonHardened(n int) (uint32, error) {
+	if n < 0 || n >= 0x80000000 {
+		return 0, fmt.Errorf("derivation index %d out of non-hardened range", n)
+	}
+	return uint32(n), nil
+}
+
 // ParseXpub validates an xpub/zpub string is non-empty.
 func ParseXpub(s string) (string, error) {
 	s = strings.TrimSpace(s)
