@@ -35,7 +35,6 @@ type errStore struct {
 	listAddressesErr   error
 	listBalancesErr    error
 	getWalletErr       error
-	getBalanceErr      error
 	insertAddressErr   error
 	deprecateAddrErr   error
 	nextAddrIndexErr   error

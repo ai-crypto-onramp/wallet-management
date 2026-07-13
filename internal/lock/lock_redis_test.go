@@ -57,7 +57,7 @@ func TestRedisLockerWrongTokenRelease(t *testing.T) {
 	}
 }
 
-func TestRedisLockerTTLExpiry(t *testing.T) {
+func TestRedisLockerTTLExpiryUnit(t *testing.T) {
 	l, _, mr := newRedisLocker(t)
 	ctx := context.Background()
 	name := "lock:" + uuid.NewString()
