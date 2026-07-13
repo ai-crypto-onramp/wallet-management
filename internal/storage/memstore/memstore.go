@@ -374,11 +374,11 @@ func (s *Store) GetAddress(_ context.Context, id uuid.UUID) (*domain.Address, er
 	return &cp, nil
 }
 
-func (s *Store) NextAddressIndex(_ context.Context, walletID uuid.UUID, change int) (int, error) {
+func (s *Store) NextAddressIndex(_ context.Context, chain string, change int) (int, error) {
 	defer s.lock()()
 	maxIdx := -1
 	for _, a := range s.addresses {
-		if a.WalletID == walletID && a.Change == change {
+		if string(a.Chain) == chain && a.Change == change {
 			if a.Index > maxIdx {
 				maxIdx = a.Index
 			}

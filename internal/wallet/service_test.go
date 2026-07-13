@@ -365,6 +365,36 @@ func TestListAddresses(t *testing.T) {
 	}
 }
 
+// Two wallets on the same chain share that chain's xpub, so index allocation
+// must be chain-global — per-wallet numbering would derive the same address
+// for both wallets (regression: unique (chain, address) violation).
+func TestTwoWalletsSameChainDeriveDistinctAddresses(t *testing.T) {
+	svc, _ := newSvc(t, defaultCfg())
+	ctx := context.Background()
+	w1, err := svc.Create(ctx, CreateRequest{Chain: ChainEthereum, Type: WalletTypeHot, Label: "w1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w2, err := svc.Create(ctx, CreateRequest{Chain: ChainEthereum, Type: WalletTypeHot, Label: "w2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a1, err := svc.DeriveAddress(ctx, w1.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a2, err := svc.DeriveAddress(ctx, w2.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a1.Address == a2.Address {
+		t.Errorf("wallets sharing a chain xpub derived the same address %s", a1.Address)
+	}
+	if a1.Index == a2.Index {
+		t.Errorf("expected distinct chain-global indexes, both got %d", a1.Index)
+	}
+}
+
 func TestSolanaDeriveSingle(t *testing.T) {
 	svc, st := newSvc(t, defaultCfg())
 	ctx := context.Background()

@@ -136,7 +136,7 @@ func TestAddressLifecycleAndOneActiveIndex(t *testing.T) {
 	ctx := context.Background()
 	w := newWallet(t, st, domain.ChainEthereum, domain.WalletTypeHot)
 
-	idx, err := st.NextAddressIndex(ctx, w.ID, 0)
+	idx, err := st.NextAddressIndex(ctx, string(domain.ChainEthereum), 0)
 	if err != nil {
 		t.Fatalf("next index: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestAddressLifecycleAndOneActiveIndex(t *testing.T) {
 		t.Errorf("expected deprecated with 1 receive, got %+v", got)
 	}
 
-	next, err := st.NextAddressIndex(ctx, w.ID, 0)
+	next, err := st.NextAddressIndex(ctx, string(domain.ChainEthereum), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

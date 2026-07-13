@@ -214,8 +214,8 @@ func (s *Store) DeprecateAddress(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-func (s *Store) NextAddressIndex(ctx context.Context, walletID uuid.UUID, change int) (int, error) {
-	row := s.queryRow(ctx, `SELECT COALESCE(MAX(index), -1) + 1 FROM addresses WHERE wallet_id=$1 AND change=$2`, walletID, change)
+func (s *Store) NextAddressIndex(ctx context.Context, chain string, change int) (int, error) {
+	row := s.queryRow(ctx, `SELECT COALESCE(MAX(index), -1) + 1 FROM addresses WHERE chain=$1 AND change=$2`, chain, change)
 	var idx int
 	if err := row.Scan(&idx); err != nil {
 		return 0, err

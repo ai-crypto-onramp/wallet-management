@@ -92,7 +92,7 @@ func TestAddressOps(t *testing.T) {
 		t.Error("expected duplicate active address error")
 	}
 	// deprecated can coexist
-	a2 := &domain.Address{ID: uuid.New(), WalletID: wID, Address: "0xold", Index: 1, State: domain.AddressStateDeprecated}
+	a2 := &domain.Address{ID: uuid.New(), WalletID: wID, Chain: domain.ChainEthereum, Address: "0xold", Index: 1, State: domain.AddressStateDeprecated}
 	if err := s.InsertAddress(ctx(), a2); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestAddressOps(t *testing.T) {
 	if len(list) != 2 {
 		t.Errorf("expected 2 addresses, got %d", len(list))
 	}
-	idx, _ := s.NextAddressIndex(ctx(), wID, 0)
+	idx, _ := s.NextAddressIndex(ctx(), string(domain.ChainEthereum), 0)
 	if idx != 2 {
 		t.Errorf("expected next index 2, got %d", idx)
 	}

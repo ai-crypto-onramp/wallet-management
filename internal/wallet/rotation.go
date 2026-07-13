@@ -137,7 +137,7 @@ func (p *RotationPolicy) deriveNew(ctx context.Context, w *Wallet) (*Address, er
 	if w.Chain == ChainBitcoin {
 		change = 0 // receive chain
 	}
-	idx, err := p.Store.NextAddressIndex(ctx, w.ID, change)
+	idx, err := p.Store.NextAddressIndex(ctx, string(w.Chain), change)
 	if err != nil {
 		return nil, fmt.Errorf("next index: %w", err)
 	}

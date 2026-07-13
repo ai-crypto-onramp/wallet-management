@@ -138,7 +138,11 @@ type Store interface {
 	GetActiveAddress(ctx context.Context, walletID uuid.UUID) (*domain.Address, error)
 	ListAddresses(ctx context.Context, walletID uuid.UUID) ([]*domain.Address, error)
 	DeprecateAddress(ctx context.Context, id uuid.UUID) error
-	NextAddressIndex(ctx context.Context, walletID uuid.UUID, change int) (int, error)
+	// NextAddressIndex allocates the next derivation index per (chain, change),
+	// not per wallet: xpubs are provisioned per chain, so all wallets on a
+	// chain share one keyspace and per-wallet numbering would derive duplicate
+	// addresses (violating the (chain, address) unique constraint).
+	NextAddressIndex(ctx context.Context, chain string, change int) (int, error)
 	IncrementReceiveCount(ctx context.Context, id uuid.UUID) error
 	GetAddress(ctx context.Context, id uuid.UUID) (*domain.Address, error)
 
