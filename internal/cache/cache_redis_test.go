@@ -47,7 +47,7 @@ func TestRedisCacheMiss(t *testing.T) {
 	}
 }
 
-func TestRedisCacheSetGetDel(t *testing.T) {
+func TestRedisCacheSetGetDelUnit(t *testing.T) {
 	c, _ := newRedisCache(t, time.Minute)
 	ctx := context.Background()
 	if err := c.Set(ctx, "k", "v", time.Minute); err != nil {
