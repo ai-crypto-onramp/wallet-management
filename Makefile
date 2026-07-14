@@ -1,4 +1,4 @@
-.PHONY: build test test-integration lint cover run \
+.PHONY: build test test-integration lint coverage run \
 	migrate-up migrate-down migrate-new \
 	docker-build docker-run docker-up docker-down clean proto
 
@@ -11,7 +11,7 @@ proto:
 	buf generate
 
 build:
-	go build -o bin/server ./cmd/wallet-management
+	go build -o bin/wallet-management ./cmd/wallet-management
 
 test:
 	go test ./cmd/... ./internal/... -race -timeout 120s -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/...
@@ -22,17 +22,17 @@ test-integration:
 lint:
 	golangci-lint run
 
-cover: test
+coverage: test
 	go tool cover -func=coverage.out | tail -1
 
 run:
 	go run ./cmd/wallet-management
 
 migrate-up:
-	go run ./cmd/migrate -direction up
+	go run ./cmd/migrate --up
 
 migrate-down:
-	go run ./cmd/migrate -direction down
+	go run ./cmd/migrate --down
 
 migrate-new:
 	@test -n "$(NAME)" || (echo "usage: make migrate-new NAME=add_widgets" && exit 1)
