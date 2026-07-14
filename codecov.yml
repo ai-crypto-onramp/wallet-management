@@ -8,4 +8,7 @@ coverage:
       default:
         informational: true
 
+ignore:
+  - "internal/pb/"
+
 comment: false
