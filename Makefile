@@ -1,4 +1,4 @@
-.PHONY: build test test-race test-integration lint coverage run \
+.PHONY: build test test-integration lint cover run \
 	migrate-up migrate-down migrate-new \
 	docker-build docker-run docker-up docker-down clean proto
 
@@ -16,16 +16,13 @@ build:
 test:
 	go test ./cmd/... ./internal/... -race -timeout 120s -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/...
 
-test-race:
-	go test ./cmd/... ./internal/... -race -timeout 180s -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/...
-
 test-integration:
 	go test ./cmd/... ./internal/... -race -tags=integration -timeout 300s -coverprofile=coverage.out -coverpkg=./cmd/...,./internal/...
 
 lint:
 	golangci-lint run
 
-coverage: test-race
+cover: test
 	go tool cover -func=coverage.out | tail -1
 
 run:
