@@ -378,4 +378,75 @@ func TestGetWithdrawalBadID(t *testing.T) {
 	}
 }
 
+func TestListWithdrawals(t *testing.T) {
+	deps, st := newDeps(t)
+	r := NewRouter(deps)
+	w := &wallet.Wallet{ID: uuid.New(), Chain: wallet.ChainEthereum, Type: wallet.WalletTypeHot, State: wallet.WalletStateActive, KeyID: "k1", CustodianRef: "mpc", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	_ = st.CreateWallet(context.Background(), w)
+	_ = doRequest(t, r, http.MethodPost, "/v1/withdrawals", map[string]string{"wallet_id": w.ID.String(), "to_address": "0x1", "asset": "eth", "amount": "5"})
+	rec := doRequest(t, r, http.MethodGet, "/v1/withdrawals", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Withdrawals []storage.WithdrawalRequest `json:"withdrawals"`
+	}
+	decode(t, rec, &resp)
+	if len(resp.Withdrawals) != 1 {
+		t.Fatalf("expected 1 withdrawal, got %d", len(resp.Withdrawals))
+	}
+}
+
+func TestListWithdrawalsByWalletAndState(t *testing.T) {
+	deps, st := newDeps(t)
+	r := NewRouter(deps)
+	w := &wallet.Wallet{ID: uuid.New(), Chain: wallet.ChainEthereum, Type: wallet.WalletTypeHot, State: wallet.WalletStateActive, KeyID: "k1", CustodianRef: "mpc", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	_ = st.CreateWallet(context.Background(), w)
+	_ = doRequest(t, r, http.MethodPost, "/v1/withdrawals", map[string]string{"wallet_id": w.ID.String(), "to_address": "0x1", "asset": "eth", "amount": "5"})
+	rec := doRequest(t, r, http.MethodGet, "/v1/withdrawals?wallet_id="+w.ID.String()+"&state=whitelisted", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp struct {
+		Withdrawals []storage.WithdrawalRequest `json:"withdrawals"`
+	}
+	decode(t, rec, &resp)
+	if len(resp.Withdrawals) != 1 {
+		t.Fatalf("expected 1 whitelisted withdrawal, got %d", len(resp.Withdrawals))
+	}
+	rec = doRequest(t, r, http.MethodGet, "/v1/withdrawals?state=confirmed", nil)
+	decode(t, rec, &resp)
+	if len(resp.Withdrawals) != 0 {
+		t.Fatalf("expected 0 confirmed, got %d", len(resp.Withdrawals))
+	}
+}
+
+func TestListWithdrawalsBadWalletID(t *testing.T) {
+	deps, _ := newDeps(t)
+	r := NewRouter(deps)
+	rec := doRequest(t, r, http.MethodGet, "/v1/withdrawals?wallet_id=not-a-uuid", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestListFundingRequests(t *testing.T) {
+	deps, st := newDeps(t)
+	r := NewRouter(deps)
+	w := &wallet.Wallet{ID: uuid.New(), Chain: wallet.ChainEthereum, Type: wallet.WalletTypeWarm, State: wallet.WalletStateActive, KeyID: "k1", CustodianRef: "mpc", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	_ = st.CreateWallet(context.Background(), w)
+	_ = doRequest(t, r, http.MethodPost, "/v1/wallets/"+w.ID.String()+"/funding-request", map[string]string{"asset": "usdc", "amount": "500", "reason": "ops"})
+	rec := doRequest(t, r, http.MethodGet, "/v1/wallets/"+w.ID.String()+"/funding-requests", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		FundingRequests []storage.FundingRequest `json:"funding_requests"`
+	}
+	decode(t, rec, &resp)
+	if len(resp.FundingRequests) != 1 {
+		t.Fatalf("expected 1 funding request, got %d", len(resp.FundingRequests))
+	}
+}
+
 var _ = errors.New

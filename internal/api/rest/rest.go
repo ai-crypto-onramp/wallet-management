@@ -8,7 +8,6 @@ import (
 	"errors"
 	"database/sql"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/ai-crypto-onramp/wallet-management/internal/balance"
@@ -50,8 +49,10 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/wallets/{id}/balances", getBalances(d))
 
 		r.Post("/wallets/{id}/funding-request", createFundingRequest(d))
+		r.Get("/wallets/{id}/funding-requests", listFundingRequests(d))
 
 		r.Post("/withdrawals", createWithdrawal(d))
+		r.Get("/withdrawals", listWithdrawals(d))
 		r.Get("/withdrawals/{id}", getWithdrawal(d))
 	})
 	return r
@@ -271,7 +272,7 @@ func createWithdrawal(d Deps) http.HandlerFunc {
 
 func getWithdrawal(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		idStr := strings.TrimPrefix(r.URL.Path, "/v1/withdrawals/")
+		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -287,6 +288,50 @@ func getWithdrawal(d Deps) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, wr)
+	}
+}
+
+func listWithdrawals(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		var walletID uuid.UUID
+		if wids := q.Get("wallet_id"); wids != "" {
+			id, err := uuid.Parse(wids)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, errors.New("invalid wallet_id"))
+				return
+			}
+			walletID = id
+		}
+		wrs, err := d.Withdrawal.Store.ListWithdrawals(r.Context(), walletID, q.Get("state"))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if wrs == nil {
+			wrs = []*storage.WithdrawalRequest{}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"withdrawals": wrs})
+	}
+}
+
+func listFundingRequests(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseID(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		state := r.URL.Query().Get("state")
+		frs, err := d.Funding.Store.ListFundingRequests(r.Context(), id, state)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if frs == nil {
+			frs = []*storage.FundingRequest{}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"funding_requests": frs})
 	}
 }
 

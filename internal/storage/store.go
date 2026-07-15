@@ -169,6 +169,7 @@ type Store interface {
 	// Withdrawals
 	CreateWithdrawal(ctx context.Context, w *WithdrawalRequest) error
 	GetWithdrawal(ctx context.Context, id uuid.UUID) (*WithdrawalRequest, error)
+	ListWithdrawals(ctx context.Context, walletID uuid.UUID, state string) ([]*WithdrawalRequest, error)
 	UpdateWithdrawalState(ctx context.Context, id uuid.UUID, state string, reason string, txHash string, policyDecisionID string) error
 	UpdateWithdrawalNonce(ctx context.Context, id uuid.UUID, nonce int64) error
 
@@ -181,6 +182,7 @@ type Store interface {
 	// Funding requests
 	CreateFundingRequest(ctx context.Context, f *FundingRequest) error
 	GetOpenFundingRequest(ctx context.Context, walletID uuid.UUID, asset string) (*FundingRequest, error)
+	ListFundingRequests(ctx context.Context, walletID uuid.UUID, state string) ([]*FundingRequest, error)
 	UpdateFundingState(ctx context.Context, id uuid.UUID, state string, treasuryBatchID string) error
 
 	// Audit outbox

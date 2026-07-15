@@ -438,6 +438,37 @@ func (s *Store) GetWithdrawal(ctx context.Context, id uuid.UUID) (*storage.Withd
 	return w, nil
 }
 
+func (s *Store) ListWithdrawals(ctx context.Context, walletID uuid.UUID, stateF string) ([]*storage.WithdrawalRequest, error) {
+	q := `SELECT id, wallet_id, to_address, asset, amount, state, policy_decision_id, failure_reason, tx_hash, nonce_value, created_at, updated_at FROM withdrawal_requests`
+	var args []any
+	if walletID != uuid.Nil && stateF != "" {
+		q += " WHERE wallet_id=$1 AND state=$2 ORDER BY created_at"
+		args = []any{walletID, stateF}
+	} else if walletID != uuid.Nil {
+		q += " WHERE wallet_id=$1 ORDER BY created_at"
+		args = []any{walletID}
+	} else if stateF != "" {
+		q += " WHERE state=$1 ORDER BY created_at"
+		args = []any{stateF}
+	} else {
+		q += " ORDER BY created_at"
+	}
+	rows, err := s.query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*storage.WithdrawalRequest
+	for rows.Next() {
+		w := &storage.WithdrawalRequest{}
+		if err := rows.Scan(&w.ID, &w.WalletID, &w.ToAddress, &w.Asset, &w.Amount, &w.State, &w.PolicyDecisionID, &w.FailureReason, &w.TxHash, &w.NonceValue, &w.CreatedAt, &w.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) UpdateWithdrawalState(ctx context.Context, id uuid.UUID, state string, reason string, txHash string, policyDecisionID string) error {
 	_, err := s.exec(ctx,
 		`UPDATE withdrawal_requests SET state=$2, failure_reason=COALESCE(NULLIF($3,''), failure_reason), tx_hash=COALESCE(NULLIF($4,''), tx_hash), policy_decision_id=COALESCE(NULLIF($5,''), policy_decision_id), updated_at=now() WHERE id=$1`,
@@ -514,6 +545,37 @@ func (s *Store) GetOpenFundingRequest(ctx context.Context, walletID uuid.UUID, a
 		return nil, err
 	}
 	return f, nil
+}
+
+func (s *Store) ListFundingRequests(ctx context.Context, walletID uuid.UUID, stateF string) ([]*storage.FundingRequest, error) {
+	q := `SELECT id, wallet_id, asset, amount, state, treasury_batch_id, reason, created_at, updated_at FROM funding_requests`
+	var args []any
+	if walletID != uuid.Nil && stateF != "" {
+		q += " WHERE wallet_id=$1 AND state=$2 ORDER BY created_at"
+		args = []any{walletID, stateF}
+	} else if walletID != uuid.Nil {
+		q += " WHERE wallet_id=$1 ORDER BY created_at"
+		args = []any{walletID}
+	} else if stateF != "" {
+		q += " WHERE state=$1 ORDER BY created_at"
+		args = []any{stateF}
+	} else {
+		q += " ORDER BY created_at"
+	}
+	rows, err := s.query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*storage.FundingRequest
+	for rows.Next() {
+		f := &storage.FundingRequest{}
+		if err := rows.Scan(&f.ID, &f.WalletID, &f.Asset, &f.Amount, &f.State, &f.TreasuryBatchID, &f.Reason, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) UpdateFundingState(ctx context.Context, id uuid.UUID, state string, treasuryBatchID string) error {

@@ -601,6 +601,23 @@ func (s *Store) GetWithdrawal(_ context.Context, id uuid.UUID) (*storage.Withdra
 	return &cp, nil
 }
 
+func (s *Store) ListWithdrawals(_ context.Context, walletID uuid.UUID, stateF string) ([]*storage.WithdrawalRequest, error) {
+	defer s.lock()()
+	var out []*storage.WithdrawalRequest
+	for _, w := range s.withdrawals {
+		if walletID != uuid.Nil && w.WalletID != walletID {
+			continue
+		}
+		if stateF != "" && w.State != stateF {
+			continue
+		}
+		cp := *w
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
 func (s *Store) UpdateWithdrawalState(_ context.Context, id uuid.UUID, state string, reason string, txHash string, policyDecisionID string) error {
 	defer s.lock()()
 	w, ok := s.withdrawals[id]
@@ -738,6 +755,23 @@ func (s *Store) GetOpenFundingRequest(_ context.Context, walletID uuid.UUID, ass
 		}
 	}
 	return nil, fmt.Errorf("no open funding request: %w", sql.ErrNoRows)
+}
+
+func (s *Store) ListFundingRequests(_ context.Context, walletID uuid.UUID, stateF string) ([]*storage.FundingRequest, error) {
+	defer s.lock()()
+	var out []*storage.FundingRequest
+	for _, f := range s.fundingReq {
+		if walletID != uuid.Nil && f.WalletID != walletID {
+			continue
+		}
+		if stateF != "" && f.State != stateF {
+			continue
+		}
+		cp := *f
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
 }
 
 func (s *Store) UpdateFundingState(_ context.Context, id uuid.UUID, state string, treasuryBatchID string) error {
