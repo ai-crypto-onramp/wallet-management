@@ -78,9 +78,11 @@ func (e *EmitterService) Emit(ctx context.Context, ev *Event) error {
 	} else {
 		seq = time.Now().UnixNano()
 	}
+	rowID, _ := uuid.NewV7()
+	eventID, _ := uuid.NewV7()
 	row := &storage.AuditOutboxEvent{
-		ID:        uuid.New(),
-		EventID:   uuid.New(),
+		ID:        rowID,
+		EventID:   eventID,
 		WalletID:  wID,
 		EventType: ev.EventType,
 		Payload:   payload,

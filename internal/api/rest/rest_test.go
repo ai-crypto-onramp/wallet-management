@@ -104,7 +104,7 @@ func TestHealthz(t *testing.T) {
 func TestPostWalletCreated(t *testing.T) {
 	deps, _ := newDeps(t)
 	r := NewRouter(deps)
-	rec := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "hot", "label": "w"})
+	rec := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "w"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -118,7 +118,7 @@ func TestPostWalletCreated(t *testing.T) {
 func TestPostWalletBadInput(t *testing.T) {
 	deps, _ := newDeps(t)
 	r := NewRouter(deps)
-	rec := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "cardano", "type": "hot", "label": "w"})
+	rec := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "cardano", "type": "HOT", "label": "w"})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
@@ -139,7 +139,7 @@ func TestPostWalletBadJSON(t *testing.T) {
 func TestGetWallet(t *testing.T) {
 	deps, _ := newDeps(t)
 	r := NewRouter(deps)
-	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "hot", "label": "w"})
+	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "w"})
 	var w wallet.Wallet
 	decode(t, create, &w)
 	rec := doRequest(t, r, http.MethodGet, "/v1/wallets/"+w.ID.String(), nil)
@@ -174,7 +174,7 @@ func TestGetWalletBadID(t *testing.T) {
 func TestListWallets(t *testing.T) {
 	deps, _ := newDeps(t)
 	r := NewRouter(deps)
-	_ = doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "hot", "label": "a"})
+	_ = doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "a"})
 	rec := doRequest(t, r, http.MethodGet, "/v1/wallets", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
@@ -189,7 +189,7 @@ func TestListWallets(t *testing.T) {
 func TestGetAddressesDeriveTrue(t *testing.T) {
 	deps, _ := newDeps(t)
 	r := NewRouter(deps)
-	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "hot", "label": "w"})
+	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "w"})
 	var w wallet.Wallet
 	decode(t, create, &w)
 	rec := doRequest(t, r, http.MethodGet, "/v1/wallets/"+w.ID.String()+"/addresses?derive=true", nil)
@@ -206,7 +206,7 @@ func TestGetAddressesDeriveTrue(t *testing.T) {
 func TestGetAddressesList(t *testing.T) {
 	deps, _ := newDeps(t)
 	r := NewRouter(deps)
-	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "hot", "label": "w"})
+	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "w"})
 	var w wallet.Wallet
 	decode(t, create, &w)
 	// derive one first
@@ -225,7 +225,7 @@ func TestGetAddressesList(t *testing.T) {
 func TestDeriveAddressEndpoint(t *testing.T) {
 	deps, _ := newDeps(t)
 	r := NewRouter(deps)
-	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "hot", "label": "w"})
+	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "w"})
 	var w wallet.Wallet
 	decode(t, create, &w)
 	rec := doRequest(t, r, http.MethodPost, "/v1/wallets/"+w.ID.String()+"/addresses/derive", nil)
@@ -242,7 +242,7 @@ func TestDeriveAddressEndpoint(t *testing.T) {
 func TestGetBalances(t *testing.T) {
 	deps, st := newDeps(t)
 	r := NewRouter(deps)
-	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "hot", "label": "w"})
+	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "w"})
 	var w wallet.Wallet
 	decode(t, create, &w)
 	_ = st.UpsertBalance(context.Background(), &storage.Balance{WalletID: w.ID, Asset: "eth", Confirmed: "100", Pending: "10"})
@@ -260,7 +260,7 @@ func TestGetBalances(t *testing.T) {
 func TestCreateFundingRequest(t *testing.T) {
 	deps, _ := newDeps(t)
 	r := NewRouter(deps)
-	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "warm", "label": "w"})
+	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "WARM", "label": "w"})
 	var w wallet.Wallet
 	decode(t, create, &w)
 	rec := doRequest(t, r, http.MethodPost, "/v1/wallets/"+w.ID.String()+"/funding-request", map[string]string{"asset": "usdc", "amount": "500", "reason": "ops"})
@@ -277,7 +277,7 @@ func TestCreateFundingRequest(t *testing.T) {
 func TestCreateFundingRequestBadJSON(t *testing.T) {
 	deps, _ := newDeps(t)
 	r := NewRouter(deps)
-	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "hot", "label": "w"})
+	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "w"})
 	var w wallet.Wallet
 	decode(t, create, &w)
 	req := httptest.NewRequest(http.MethodPost, "/v1/wallets/"+w.ID.String()+"/funding-request", bytes.NewReader([]byte("{bad")))
@@ -302,7 +302,7 @@ func TestCreateWithdrawal(t *testing.T) {
 	}
 	var wr storage.WithdrawalRequest
 	decode(t, rec, &wr)
-	if wr.State != "whitelisted" {
+	if wr.State != "WHITELISTED" {
 		t.Errorf("expected whitelisted, got %s", wr.State)
 	}
 }
@@ -403,7 +403,7 @@ func TestListWithdrawalsByWalletAndState(t *testing.T) {
 	w := &wallet.Wallet{ID: uuid.New(), Chain: wallet.ChainEthereum, Type: wallet.WalletTypeHot, State: wallet.WalletStateActive, KeyID: "k1", CustodianRef: "mpc", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	_ = st.CreateWallet(context.Background(), w)
 	_ = doRequest(t, r, http.MethodPost, "/v1/withdrawals", map[string]string{"wallet_id": w.ID.String(), "to_address": "0x1", "asset": "eth", "amount": "5"})
-	rec := doRequest(t, r, http.MethodGet, "/v1/withdrawals?wallet_id="+w.ID.String()+"&state=whitelisted", nil)
+	rec := doRequest(t, r, http.MethodGet, "/v1/withdrawals?wallet_id="+w.ID.String()+"&state=WHITELISTED", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
@@ -414,7 +414,7 @@ func TestListWithdrawalsByWalletAndState(t *testing.T) {
 	if len(resp.Withdrawals) != 1 {
 		t.Fatalf("expected 1 whitelisted withdrawal, got %d", len(resp.Withdrawals))
 	}
-	rec = doRequest(t, r, http.MethodGet, "/v1/withdrawals?state=confirmed", nil)
+	rec = doRequest(t, r, http.MethodGet, "/v1/withdrawals?state=CONFIRMED", nil)
 	decode(t, rec, &resp)
 	if len(resp.Withdrawals) != 0 {
 		t.Fatalf("expected 0 confirmed, got %d", len(resp.Withdrawals))

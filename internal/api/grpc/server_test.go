@@ -107,10 +107,10 @@ func TestOnConfirmationWithdrawalHappyPath(t *testing.T) {
 	wID := uuid.New()
 	w := &wallet.Wallet{ID: wID, Chain: wallet.ChainEthereum, Type: wallet.WalletTypeHot, State: wallet.WalletStateActive, KeyID: "k1", CustodianRef: "mpc", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	_ = srv.Withdrawals.Store.CreateWallet(ctx, w)
-	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: wID, ToAddress: "0x1", Asset: "eth", Amount: "1", State: "broadcast"}
+	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: wID, ToAddress: "0x1", Asset: "eth", Amount: "1", State: "BROADCAST"}
 	_ = srv.Withdrawals.Store.CreateWithdrawal(ctx, wr)
 	// advance to broadcast via update (CreateWithdrawal sets pending)
-	_ = srv.Withdrawals.Store.UpdateWithdrawalState(ctx, wr.ID, "broadcast", "", "0xold", "")
+	_ = srv.Withdrawals.Store.UpdateWithdrawalState(ctx, wr.ID, "BROADCAST", "", "0xold", "")
 
 	conn, closeFn := dial(t, lis)
 	defer closeFn()
@@ -121,7 +121,7 @@ func TestOnConfirmationWithdrawalHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := srv.Withdrawals.Store.GetWithdrawal(ctx, wr.ID)
-	if got.State != "confirmed" || got.TxHash != "0xnew" {
+	if got.State != "CONFIRMED" || got.TxHash != "0xnew" {
 		t.Errorf("expected confirmed/0xnew, got %+v", got)
 	}
 }
@@ -195,10 +195,10 @@ func TestOnReorgWithdrawalRollback(t *testing.T) {
 	wID := uuid.New()
 	w := &wallet.Wallet{ID: wID, Chain: wallet.ChainBitcoin, Type: wallet.WalletTypeHot, State: wallet.WalletStateActive, KeyID: "k1", CustodianRef: "mpc", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	_ = srv.Withdrawals.Store.CreateWallet(ctx, w)
-	_ = srv.Withdrawals.UTXOs.TrackUTXO(ctx, &storage.UTXO{Outpoint: "u1", WalletID: wID, Value: "100", LockState: "free"})
-	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: wID, ToAddress: "bc1q", Asset: "btc", Amount: "100", State: "broadcast"}
+	_ = srv.Withdrawals.UTXOs.TrackUTXO(ctx, &storage.UTXO{Outpoint: "u1", WalletID: wID, Value: "100", LockState: "FREE"})
+	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: wID, ToAddress: "bc1q", Asset: "btc", Amount: "100", State: "BROADCAST"}
 	_ = srv.Withdrawals.Store.CreateWithdrawal(ctx, wr)
-	_ = srv.Withdrawals.Store.UpdateWithdrawalState(ctx, wr.ID, "confirmed", "", "0xtx", "")
+	_ = srv.Withdrawals.Store.UpdateWithdrawalState(ctx, wr.ID, "CONFIRMED", "", "0xtx", "")
 	conn, closeFn := dial(t, lis)
 	defer closeFn()
 	if err := grpcInvoke(ctx, conn, "OnReorg", &OnReorgRequest{
@@ -207,7 +207,7 @@ func TestOnReorgWithdrawalRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := srv.Withdrawals.Store.GetWithdrawal(ctx, wr.ID)
-	if got.State != "broadcast" {
+	if got.State != "BROADCAST" {
 		t.Errorf("expected demoted to broadcast after reorg, got %s", got.State)
 	}
 	free, _ := srv.Withdrawals.Store.ListFreeUTXOs(ctx, wID)

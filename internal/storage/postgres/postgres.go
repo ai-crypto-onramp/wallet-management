@@ -175,7 +175,7 @@ func (s *Store) InsertAddress(ctx context.Context, a *domain.Address) error {
 }
 
 func (s *Store) GetActiveAddress(ctx context.Context, walletID uuid.UUID) (*domain.Address, error) {
-	row := s.queryRow(ctx, `SELECT id, wallet_id, chain, address, derivation_path, index, change, state, receive_count, created_at FROM addresses WHERE wallet_id=$1 AND state='active' LIMIT 1`, walletID)
+	row := s.queryRow(ctx, `SELECT id, wallet_id, chain, address, derivation_path, index, change, state, receive_count, created_at FROM addresses WHERE wallet_id=$1 AND state='ACTIVE' LIMIT 1`, walletID)
 	return scanAddress(row)
 }
 
@@ -210,7 +210,7 @@ func (s *Store) ListAddresses(ctx context.Context, walletID uuid.UUID) ([]*domai
 }
 
 func (s *Store) DeprecateAddress(ctx context.Context, id uuid.UUID) error {
-	_, err := s.exec(ctx, `UPDATE addresses SET state='deprecated' WHERE id=$1`, id)
+	_, err := s.exec(ctx, `UPDATE addresses SET state='DEPRECATED', updated_at=now() WHERE id=$1`, id)
 	return err
 }
 
@@ -224,7 +224,7 @@ func (s *Store) NextAddressIndex(ctx context.Context, chain string, change int) 
 }
 
 func (s *Store) IncrementReceiveCount(ctx context.Context, id uuid.UUID) error {
-	_, err := s.exec(ctx, `UPDATE addresses SET receive_count = receive_count + 1 WHERE id=$1`, id)
+	_, err := s.exec(ctx, `UPDATE addresses SET receive_count = receive_count + 1, updated_at=now() WHERE id=$1`, id)
 	return err
 }
 
@@ -297,7 +297,7 @@ func (s *Store) InsertUTXO(ctx context.Context, u *storage.UTXO) error {
 }
 
 func (s *Store) ListFreeUTXOs(ctx context.Context, walletID uuid.UUID) ([]*storage.UTXO, error) {
-	rows, err := s.query(ctx, `SELECT outpoint, wallet_id, value, script_type, confirmations, lock_state, locked_at, spent_at, tx_hash, updated_at FROM utxos WHERE wallet_id=$1 AND lock_state='free' ORDER BY outpoint`, walletID)
+	rows, err := s.query(ctx, `SELECT outpoint, wallet_id, value, script_type, confirmations, lock_state, locked_at, spent_at, tx_hash, updated_at FROM utxos WHERE wallet_id=$1 AND lock_state='FREE' ORDER BY outpoint`, walletID)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +319,7 @@ func (s *Store) LockUTXOs(ctx context.Context, outpoints []string) error {
 	}
 	return s.InTx(ctx, func(ctx context.Context) error {
 		for _, op := range outpoints {
-			res, err := s.exec(ctx, `UPDATE utxos SET lock_state='locked', locked_at=now(), updated_at=now() WHERE outpoint=$1 AND lock_state='free'`, op)
+			res, err := s.exec(ctx, `UPDATE utxos SET lock_state='LOCKED', locked_at=now(), updated_at=now() WHERE outpoint=$1 AND lock_state='FREE'`, op)
 			if err != nil {
 				return err
 			}
@@ -340,7 +340,7 @@ func (s *Store) MarkUTXOsSpent(ctx context.Context, outpoints []string, txHash s
 		return nil
 	}
 	for _, op := range outpoints {
-		if _, err := s.exec(ctx, `UPDATE utxos SET lock_state='spent', spent_at=now(), tx_hash=$2, updated_at=now() WHERE outpoint=$1`, op, txHash); err != nil {
+		if _, err := s.exec(ctx, `UPDATE utxos SET lock_state='SPENT', spent_at=now(), tx_hash=$2, updated_at=now() WHERE outpoint=$1`, op, txHash); err != nil {
 			return err
 		}
 	}
@@ -352,7 +352,7 @@ func (s *Store) RestoreUTXOs(ctx context.Context, outpoints []string) error {
 		return nil
 	}
 	for _, op := range outpoints {
-		if _, err := s.exec(ctx, `UPDATE utxos SET lock_state='free', spent_at=NULL, locked_at=NULL, tx_hash='', updated_at=now() WHERE outpoint=$1`, op); err != nil {
+		if _, err := s.exec(ctx, `UPDATE utxos SET lock_state='FREE', spent_at=NULL, locked_at=NULL, tx_hash='', updated_at=now() WHERE outpoint=$1`, op); err != nil {
 			return err
 		}
 	}
@@ -490,7 +490,7 @@ func (s *Store) BindKeyMapping(ctx context.Context, m *storage.KeyMapping) error
 }
 
 func (s *Store) ResolveActiveKey(ctx context.Context, walletID uuid.UUID) ([]*storage.KeyMapping, error) {
-	rows, err := s.query(ctx, `SELECT wallet_id, key_id, active_from, active_to, rotation_state, created_at FROM key_mappings WHERE wallet_id=$1 AND rotation_state IN ('current','cooling') ORDER BY active_from`, walletID)
+	rows, err := s.query(ctx, `SELECT wallet_id, key_id, active_from, active_to, rotation_state, created_at FROM key_mappings WHERE wallet_id=$1 AND rotation_state IN ('CURRENT','COOLING') ORDER BY active_from`, walletID)
 	if err != nil {
 		return nil, err
 	}
@@ -512,21 +512,21 @@ func (s *Store) ResolveActiveKey(ctx context.Context, walletID uuid.UUID) ([]*st
 func (s *Store) RotateKeyMapping(ctx context.Context, walletID uuid.UUID, newKeyID string, cooling time.Duration) error {
 	activeTo := time.Now().Add(cooling)
 	return s.InTx(ctx, func(ctx context.Context) error {
-		_, err := s.exec(ctx, `UPDATE key_mappings SET rotation_state='cooling', active_to=$2 WHERE wallet_id=$1 AND rotation_state='current'`, walletID, activeTo)
+		_, err := s.exec(ctx, `UPDATE key_mappings SET rotation_state='COOLING', active_to=$2, updated_at=now() WHERE wallet_id=$1 AND rotation_state='CURRENT'`, walletID, activeTo)
 		if err != nil {
 			return err
 		}
 		_, err = s.exec(ctx,
-			`INSERT INTO key_mappings (wallet_id, key_id, active_from, rotation_state, created_at)
-			 VALUES ($1,$2,now(),'current',now())
-			 ON CONFLICT (wallet_id, key_id) DO UPDATE SET rotation_state='current', active_from=now(), active_to=NULL`,
+			`INSERT INTO key_mappings (wallet_id, key_id, active_from, rotation_state, created_at, updated_at)
+			 VALUES ($1,$2,now(),'CURRENT',now(),now())
+			 ON CONFLICT (wallet_id, key_id) DO UPDATE SET rotation_state='CURRENT', active_from=now(), active_to=NULL, updated_at=now()`,
 			walletID, newKeyID)
 		return err
 	})
 }
 
 func (s *Store) ExpireCooling(ctx context.Context) error {
-	_, err := s.exec(ctx, `UPDATE key_mappings SET rotation_state='retired' WHERE rotation_state='cooling' AND active_to IS NOT NULL AND active_to < now()`)
+	_, err := s.exec(ctx, `UPDATE key_mappings SET rotation_state='RETIRED', updated_at=now() WHERE rotation_state='COOLING' AND active_to IS NOT NULL AND active_to < now()`)
 	return err
 }
 
@@ -539,7 +539,7 @@ func (s *Store) CreateFundingRequest(ctx context.Context, f *storage.FundingRequ
 }
 
 func (s *Store) GetOpenFundingRequest(ctx context.Context, walletID uuid.UUID, asset string) (*storage.FundingRequest, error) {
-	row := s.queryRow(ctx, `SELECT id, wallet_id, asset, amount, state, treasury_batch_id, reason, created_at, updated_at FROM funding_requests WHERE wallet_id=$1 AND asset=$2 AND state='requested' LIMIT 1`, walletID, asset)
+	row := s.queryRow(ctx, `SELECT id, wallet_id, asset, amount, state, treasury_batch_id, reason, created_at, updated_at FROM funding_requests WHERE wallet_id=$1 AND asset=$2 AND state='REQUESTED' LIMIT 1`, walletID, asset)
 	f := &storage.FundingRequest{}
 	if err := row.Scan(&f.ID, &f.WalletID, &f.Asset, &f.Amount, &f.State, &f.TreasuryBatchID, &f.Reason, &f.CreatedAt, &f.UpdatedAt); err != nil {
 		return nil, err
@@ -609,7 +609,7 @@ func (s *Store) ListUndeliveredAuditEvents(ctx context.Context, limit int) ([]*s
 }
 
 func (s *Store) MarkAuditDelivered(ctx context.Context, id uuid.UUID) error {
-	_, err := s.exec(ctx, `UPDATE audit_outbox SET delivered=true, attempts=attempts+1, delivered_at=now() WHERE id=$1`, id)
+	_, err := s.exec(ctx, `UPDATE audit_outbox SET delivered=true, attempts=attempts+1, delivered_at=now(), updated_at=now() WHERE id=$1`, id)
 	return err
 }
 

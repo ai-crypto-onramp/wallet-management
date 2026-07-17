@@ -42,7 +42,7 @@ func TestFromEnvDefaults(t *testing.T) {
 func TestFromEnvOverrides(t *testing.T) {
 	t.Setenv("PORT", "9999")
 	t.Setenv("CONFIRMATIONS_REQUIRED_EVM", "33")
-	t.Setenv("CONFIRMATIONS_REQUIRED_SOL", "confirmed")
+	t.Setenv("CONFIRMATIONS_REQUIRED_SOL", "CONFIRMED")
 	t.Setenv("HOT_WALLET_MIN_BALANCE_USD", "1234.5")
 	t.Setenv("DERIVATION_CACHE_TTL", "10s")
 	t.Setenv("KEY_COOLING_PERIOD", "1h")

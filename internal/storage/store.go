@@ -21,6 +21,53 @@ var (
 	ErrDuplicateAudit      = errors.New("duplicate audit event")
 )
 
+// WithdrawalState enumerates the lifecycle states of a WithdrawalRequest.
+type WithdrawalState string
+
+const (
+	WithdrawalStatePending    WithdrawalState = "PENDING"
+	WithdrawalStateWhitelisted WithdrawalState = "WHITELISTED"
+	WithdrawalStateSigned     WithdrawalState = "SIGNED"
+	WithdrawalStateBroadcast   WithdrawalState = "BROADCAST"
+	WithdrawalStateConfirmed  WithdrawalState = "CONFIRMED"
+	WithdrawalStateFailed     WithdrawalState = "FAILED"
+)
+
+// FundingState enumerates the lifecycle states of a FundingRequest.
+type FundingState string
+
+const (
+	FundingStateRequested FundingState = "REQUESTED"
+	FundingStateApproved   FundingState = "APPROVED"
+	FundingStateSettled    FundingState = "SETTLED"
+	FundingStateRejected   FundingState = "REJECTED"
+)
+
+// RotationState enumerates the key rotation states of a KeyMapping.
+type RotationState string
+
+const (
+	RotationStateCurrent RotationState = "CURRENT"
+	RotationStateCooling RotationState = "COOLING"
+	RotationStateRetired RotationState = "RETIRED"
+)
+
+// UTXOLockState enumerates the lock states of a UTXO.
+type UTXOLockState string
+
+const (
+	UTXOLockStateFree   UTXOLockState = "FREE"
+	UTXOLockStateLocked UTXOLockState = "LOCKED"
+	UTXOLockStateSpent  UTXOLockState = "SPENT"
+)
+
+// ScriptType is the BTC script type of a UTXO.
+type ScriptType string
+
+const (
+	ScriptTypeP2WPKH ScriptType = "P2WPKH"
+)
+
 // TxRunner executes fn within a serializable DB transaction.
 type TxRunner interface {
 	InTx(ctx context.Context, fn func(ctx context.Context) error) error

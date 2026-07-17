@@ -75,8 +75,9 @@ func (s *Service) threshold(chain wallet.Chain) int {
 // pending to confirmed once the threshold is met. Idempotent on
 // (wallet_id, asset, block_height, event_id).
 func (s *Service) ApplyConfirmationEvent(ctx context.Context, ev *ConfirmationEvent) error {
+	beID, _ := uuid.NewV7()
 	be := &storage.BalanceEvent{
-		ID: uuid.New(), WalletID: ev.WalletID, Asset: ev.Asset,
+		ID: beID, WalletID: ev.WalletID, Asset: ev.Asset,
 		BlockHeight: ev.BlockHeight, EventID: ev.EventID,
 	}
 	if err := s.Store.RecordBalanceEvent(ctx, be); err != nil {

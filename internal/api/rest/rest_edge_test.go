@@ -332,7 +332,7 @@ func TestCreateWalletInternalError(t *testing.T) {
 	deps, st := newErrDeps(t)
 	st.createWalletErr = errors.New("db down")
 	r := NewRouter(deps)
-	rec := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "hot", "label": "w"})
+	rec := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "w"})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 on CreateWallet error, got %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -353,7 +353,7 @@ func TestNewServerAndStartShutdown(t *testing.T) {
 func TestPostWalletMissingLabel(t *testing.T) {
 	deps, _ := newErrDeps(t)
 	r := NewRouter(deps)
-	rec := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "hot"})
+	rec := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT"})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 on missing label, got %d", rec.Code)
 	}

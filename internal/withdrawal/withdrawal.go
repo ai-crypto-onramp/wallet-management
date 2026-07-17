@@ -63,13 +63,14 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*storage.Withd
 		return nil, errors.New("wallet is paused")
 	}
 	now := time.Now()
+	id, _ := uuid.NewV7()
 	wr := &storage.WithdrawalRequest{
-		ID:        uuid.New(),
+		ID:        id,
 		WalletID:  req.WalletID,
 		ToAddress: req.ToAddress,
 		Asset:     req.Asset,
 		Amount:    req.Amount,
-		State:     "pending",
+		State:     string(storage.WithdrawalStatePending),
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -106,16 +107,16 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*storage.Withd
 			}
 			decisionID = dec.DecisionID
 		}
-		_ = s.Store.UpdateWithdrawalState(ctx, wr.ID, "failed", reason, "", decisionID)
-		wr.State = "failed"
+		_ = s.Store.UpdateWithdrawalState(ctx, wr.ID, string(storage.WithdrawalStateFailed), reason, "", decisionID)
+		wr.State = string(storage.WithdrawalStateFailed)
 		wr.FailureReason = reason
 		wr.PolicyDecisionID = decisionID
 		return wr, nil
 	}
-	if err := s.Store.UpdateWithdrawalState(ctx, wr.ID, "whitelisted", "", "", dec.DecisionID); err != nil {
+	if err := s.Store.UpdateWithdrawalState(ctx, wr.ID, string(storage.WithdrawalStateWhitelisted), "", "", dec.DecisionID); err != nil {
 		return nil, err
 	}
-	wr.State = "whitelisted"
+	wr.State = string(storage.WithdrawalStateWhitelisted)
 	wr.PolicyDecisionID = dec.DecisionID
 	return wr, nil
 }
@@ -127,7 +128,7 @@ func (s *Service) ConstructAndSign(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	if wr.State != "whitelisted" {
+	if wr.State != string(storage.WithdrawalStateWhitelisted) {
 		return fmt.Errorf("withdrawal not in whitelisted state (is %s)", wr.State)
 	}
 	w, err := s.Store.GetWallet(ctx, wr.WalletID)
@@ -168,11 +169,11 @@ func (s *Service) ConstructAndSign(ctx context.Context, id uuid.UUID) error {
 	})
 	if err != nil {
 		s.rollback(ctx, w, reservedNonce, reservedOutpoints)
-		_ = s.Store.UpdateWithdrawalState(ctx, id, "failed", "sign_failed", "", "")
+		_ = s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateFailed), "sign_failed", "", "")
 		return fmt.Errorf("sign: %w", err)
 	}
 	_ = resp
-	if err := s.Store.UpdateWithdrawalState(ctx, id, "signed", "", "", ""); err != nil {
+	if err := s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateSigned), "", "", ""); err != nil {
 		return err
 	}
 	if s.Audit != nil {
@@ -191,7 +192,7 @@ func (s *Service) Broadcast(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	if wr.State != "signed" {
+	if wr.State != string(storage.WithdrawalStateSigned) {
 		return fmt.Errorf("withdrawal not signed (is %s)", wr.State)
 	}
 	w, err := s.Store.GetWallet(ctx, wr.WalletID)
@@ -205,7 +206,7 @@ func (s *Service) Broadcast(ctx context.Context, id uuid.UUID) error {
 		// rollback reserved resources
 		var ops []string
 		s.rollback(ctx, w, noncePtr(wr), ops)
-		_ = s.Store.UpdateWithdrawalState(ctx, id, "failed", "broadcast_failed", "", "")
+		_ = s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateFailed), "broadcast_failed", "", "")
 		return fmt.Errorf("broadcast: %w", err)
 	}
 	if w.Chain == wallet.ChainBitcoin {
@@ -220,7 +221,7 @@ func (s *Service) Broadcast(ctx context.Context, id uuid.UUID) error {
 			_ = s.Nonces.CommitNonce(ctx, wr.WalletID, w.Chain, *wr.NonceValue)
 		}
 	}
-	if err := s.Store.UpdateWithdrawalState(ctx, id, "broadcast", "", resp.TxHash, ""); err != nil {
+	if err := s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateBroadcast), "", resp.TxHash, ""); err != nil {
 		return err
 	}
 	if s.Audit != nil {
@@ -240,10 +241,10 @@ func (s *Service) Confirm(ctx context.Context, id uuid.UUID, txHash string) erro
 	if err != nil {
 		return err
 	}
-	if wr.State != "broadcast" {
+	if wr.State != string(storage.WithdrawalStateBroadcast) {
 		return fmt.Errorf("withdrawal not broadcast (is %s)", wr.State)
 	}
-	if err := s.Store.UpdateWithdrawalState(ctx, id, "confirmed", "", txHash, ""); err != nil {
+	if err := s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateConfirmed), "", txHash, ""); err != nil {
 		return err
 	}
 	if s.Audit != nil {
@@ -267,7 +268,7 @@ func (s *Service) Fail(ctx context.Context, id uuid.UUID, reason string) error {
 		return err
 	}
 	s.rollback(ctx, w, noncePtr(wr), nil)
-	if err := s.Store.UpdateWithdrawalState(ctx, id, "failed", reason, "", ""); err != nil {
+	if err := s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateFailed), reason, "", ""); err != nil {
 		return err
 	}
 	if s.Audit != nil {
@@ -291,8 +292,8 @@ func (s *Service) OnReorg(ctx context.Context, id uuid.UUID, outpoints []string)
 		return err
 	}
 	// demote confirmed->broadcast so the withdrawal can be re-broadcast
-	if wr.State == "confirmed" {
-		return s.Store.UpdateWithdrawalState(ctx, id, "broadcast", "reorg", "", "")
+	if wr.State == string(storage.WithdrawalStateConfirmed) {
+		return s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateBroadcast), "reorg", "", "")
 	}
 	return nil
 }

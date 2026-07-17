@@ -80,7 +80,7 @@ func TestConstructAndSignBTCUTXOSelectError(t *testing.T) {
 	e := newErrEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainBitcoin, wallet.WalletStateActive)
 	// No UTXOs seeded — SelectForAmount will return insufficient funds.
-	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: w.ID, ToAddress: "bc1q", Asset: "btc", Amount: "999", State: "whitelisted"}
+	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: w.ID, ToAddress: "bc1q", Asset: "btc", Amount: "999", State: "WHITELISTED"}
 	if err := e.st.CreateWithdrawal(context.Background(), wr); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestOnReorgGetWithdrawalError(t *testing.T) {
 func TestOnReorgRestoreError(t *testing.T) {
 	e := newErrEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainBitcoin, wallet.WalletStateActive)
-	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "u1", WalletID: w.ID, Value: "100", LockState: "free"})
+	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "u1", WalletID: w.ID, Value: "100", LockState: "FREE"})
 	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "bc1q", Asset: "btc", Amount: "100"})
 	_ = e.svc.ConstructAndSign(context.Background(), wr.ID)
 	_ = e.svc.Broadcast(context.Background(), wr.ID)
@@ -183,7 +183,7 @@ func TestConstructAndSignGetWalletError(t *testing.T) {
 
 func TestCreateUpdateWithdrawalStateError(t *testing.T) {
 	e := newErrEnv(t)
-	// Whitelisted path: after approval, UpdateWithdrawalState("whitelisted")
+	// Whitelisted path: after approval, UpdateWithdrawalState("WHITELISTED")
 	// is called. Inject a failure there.
 	e.svc.Store = &errStore{Store: e.st, updateWithdrawalErr: errors.New("db down")}
 	w := seedWallet(t, e.st, wallet.ChainEthereum, wallet.WalletStateActive)

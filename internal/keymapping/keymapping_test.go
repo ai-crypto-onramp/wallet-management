@@ -32,7 +32,7 @@ func TestBind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ms) != 1 || ms[0].KeyID != "k1" || ms[0].RotationState != "current" {
+	if len(ms) != 1 || ms[0].KeyID != "k1" || ms[0].RotationState != "CURRENT" {
 		t.Errorf("unexpected mappings: %+v", ms)
 	}
 	// duplicate current bind fails
@@ -70,10 +70,10 @@ func TestRotateCoolingThenRetired(t *testing.T) {
 	var current, cooling *storage.KeyMapping
 	for _, m := range ms {
 		mm := m
-		if m.RotationState == "current" {
+		if m.RotationState == "CURRENT" {
 			current = mm
 		}
-		if m.RotationState == "cooling" {
+		if m.RotationState == "COOLING" {
 			cooling = mm
 		}
 	}
@@ -99,7 +99,7 @@ func TestResolveActiveAfterCoolingExpired(t *testing.T) {
 		t.Fatal(err)
 	}
 	ms, _ := svc.ResolveActive(ctx, wID)
-	if len(ms) != 1 || ms[0].KeyID != "k2" || ms[0].RotationState != "current" {
+	if len(ms) != 1 || ms[0].KeyID != "k2" || ms[0].RotationState != "CURRENT" {
 		t.Errorf("expected only k2 current after expiry, got %+v", ms)
 	}
 }
@@ -151,7 +151,7 @@ func TestRotateExistingKey(t *testing.T) {
 	wID := uuid.New()
 	_ = svc.Bind(ctx, wID, "k1")
 	// bind k2 as cooling first
-	_ = svc.Store.BindKeyMapping(ctx, &storage.KeyMapping{WalletID: wID, KeyID: "k2", RotationState: "cooling", ActiveFrom: time.Now()})
+	_ = svc.Store.BindKeyMapping(ctx, &storage.KeyMapping{WalletID: wID, KeyID: "k2", RotationState: "COOLING", ActiveFrom: time.Now()})
 	// rotate to k2 (existing) should promote it to current
 	if err := svc.Rotate(ctx, wID, "k2"); err != nil {
 		t.Fatal(err)

@@ -66,15 +66,15 @@ func TestListWalletsFilters(t *testing.T) {
 	if len(eth) != 1 || eth[0].ID != w1.ID {
 		t.Errorf("chain filter wrong: %+v", eth)
 	}
-	cold, _ := s.ListWallets(ctx(), "", "cold", "")
+	cold, _ := s.ListWallets(ctx(), "", "COLD", "")
 	if len(cold) != 1 || cold[0].ID != w2.ID {
 		t.Errorf("type filter wrong: %+v", cold)
 	}
-	retired, _ := s.ListWallets(ctx(), "", "", "retired")
+	retired, _ := s.ListWallets(ctx(), "", "", "RETIRED")
 	if len(retired) != 1 || retired[0].ID != w2.ID {
 		t.Errorf("state filter wrong: %+v", retired)
 	}
-	none, _ := s.ListWallets(ctx(), "ethereum", "cold", "")
+	none, _ := s.ListWallets(ctx(), "ethereum", "COLD", "")
 	if len(none) != 0 {
 		t.Errorf("expected 0, got %d", len(none))
 	}
@@ -180,8 +180,8 @@ func TestBalanceEventDedup(t *testing.T) {
 func TestUTXOOps(t *testing.T) {
 	s := New()
 	wID := uuid.New()
-	u1 := &storage.UTXO{Outpoint: "op1", WalletID: wID, Value: "100", LockState: "free"}
-	u2 := &storage.UTXO{Outpoint: "op2", WalletID: wID, Value: "200", LockState: "free"}
+	u1 := &storage.UTXO{Outpoint: "op1", WalletID: wID, Value: "100", LockState: "FREE"}
+	u2 := &storage.UTXO{Outpoint: "op2", WalletID: wID, Value: "200", LockState: "FREE"}
 	for _, u := range []*storage.UTXO{u1, u2} {
 		if err := s.InsertUTXO(ctx(), u); err != nil {
 			t.Fatal(err)
@@ -277,7 +277,7 @@ func TestNonceOps(t *testing.T) {
 
 func TestWithdrawalOps(t *testing.T) {
 	s := New()
-	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: uuid.New(), ToAddress: "0xto", Asset: "eth", Amount: "10", State: "pending"}
+	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: uuid.New(), ToAddress: "0xto", Asset: "eth", Amount: "10", State: "PENDING"}
 	if err := s.CreateWithdrawal(ctx(), wr); err != nil {
 		t.Fatal(err)
 	}
@@ -289,24 +289,24 @@ func TestWithdrawalOps(t *testing.T) {
 		t.Error("expected duplicate id error")
 	}
 	got, _ := s.GetWithdrawal(ctx(), wr.ID)
-	if got.State != "pending" {
+	if got.State != "PENDING" {
 		t.Errorf("expected pending, got %s", got.State)
 	}
 	if _, err := s.GetWithdrawal(ctx(), uuid.New()); err == nil {
 		t.Error("expected not found")
 	}
-	if err := s.UpdateWithdrawalState(ctx(), wr.ID, "whitelisted", "", "", "dec1"); err != nil {
+	if err := s.UpdateWithdrawalState(ctx(), wr.ID, "WHITELISTED", "", "", "dec1"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = s.GetWithdrawal(ctx(), wr.ID)
-	if got.State != "whitelisted" || got.PolicyDecisionID != "dec1" {
+	if got.State != "WHITELISTED" || got.PolicyDecisionID != "dec1" {
 		t.Errorf("mismatch: %+v", got)
 	}
-	if err := s.UpdateWithdrawalState(ctx(), wr.ID, "confirmed", "r", "txh", ""); err != nil {
+	if err := s.UpdateWithdrawalState(ctx(), wr.ID, "CONFIRMED", "r", "txh", ""); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = s.GetWithdrawal(ctx(), wr.ID)
-	if got.State != "confirmed" || got.TxHash != "txh" || got.FailureReason != "r" {
+	if got.State != "CONFIRMED" || got.TxHash != "txh" || got.FailureReason != "r" {
 		t.Errorf("mismatch: %+v", got)
 	}
 	// inflight dedup should be released now
@@ -331,15 +331,15 @@ func TestWithdrawalOps(t *testing.T) {
 func TestKeyMappingOps(t *testing.T) {
 	s := New()
 	wID := uuid.New()
-	if err := s.BindKeyMapping(ctx(), &storage.KeyMapping{WalletID: wID, KeyID: "k1", RotationState: "current", ActiveFrom: time.Now()}); err != nil {
+	if err := s.BindKeyMapping(ctx(), &storage.KeyMapping{WalletID: wID, KeyID: "k1", RotationState: "CURRENT", ActiveFrom: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	// second current fails
-	if err := s.BindKeyMapping(ctx(), &storage.KeyMapping{WalletID: wID, KeyID: "k2", RotationState: "current"}); err == nil {
+	if err := s.BindKeyMapping(ctx(), &storage.KeyMapping{WalletID: wID, KeyID: "k2", RotationState: "CURRENT"}); err == nil {
 		t.Error("expected duplicate current error")
 	}
 	// cooling is allowed
-	if err := s.BindKeyMapping(ctx(), &storage.KeyMapping{WalletID: wID, KeyID: "k1old", RotationState: "cooling"}); err != nil {
+	if err := s.BindKeyMapping(ctx(), &storage.KeyMapping{WalletID: wID, KeyID: "k1old", RotationState: "COOLING"}); err != nil {
 		t.Fatal(err)
 	}
 	ms, err := s.ResolveActiveKey(ctx(), wID)
@@ -360,10 +360,10 @@ func TestKeyMappingOps(t *testing.T) {
 	ms, _ = s.ResolveActiveKey(ctx(), wID)
 	var hasCurrent, hasCooling bool
 	for _, m := range ms {
-		if m.KeyID == "k1new" && m.RotationState == "current" {
+		if m.KeyID == "k1new" && m.RotationState == "CURRENT" {
 			hasCurrent = true
 		}
-		if m.KeyID == "k1" && m.RotationState == "cooling" {
+		if m.KeyID == "k1" && m.RotationState == "COOLING" {
 			hasCooling = true
 		}
 	}
@@ -376,7 +376,7 @@ func TestKeyMappingOps(t *testing.T) {
 	}
 	// expire cooling (set activeTo in past)
 	for _, m := range ms {
-		if m.RotationState == "cooling" {
+		if m.RotationState == "COOLING" {
 			past := time.Now().Add(-time.Hour)
 			m.ActiveTo = &past
 		}
@@ -396,16 +396,16 @@ func TestKeyMappingOps(t *testing.T) {
 func TestFundingRequestOps(t *testing.T) {
 	s := New()
 	wID := uuid.New()
-	f1 := &storage.FundingRequest{ID: uuid.New(), WalletID: wID, Asset: "usdc", State: "requested"}
+	f1 := &storage.FundingRequest{ID: uuid.New(), WalletID: wID, Asset: "usdc", State: "REQUESTED"}
 	if err := s.CreateFundingRequest(ctx(), f1); err != nil {
 		t.Fatal(err)
 	}
 	// duplicate open
-	if err := s.CreateFundingRequest(ctx(), &storage.FundingRequest{ID: uuid.New(), WalletID: wID, Asset: "usdc", State: "requested"}); !errors.Is(err, storage.ErrDuplicateFunding) {
+	if err := s.CreateFundingRequest(ctx(), &storage.FundingRequest{ID: uuid.New(), WalletID: wID, Asset: "usdc", State: "REQUESTED"}); !errors.Is(err, storage.ErrDuplicateFunding) {
 		t.Errorf("expected ErrDuplicateFunding, got %v", err)
 	}
 	// different asset ok
-	if err := s.CreateFundingRequest(ctx(), &storage.FundingRequest{ID: uuid.New(), WalletID: wID, Asset: "eth", State: "requested"}); err != nil {
+	if err := s.CreateFundingRequest(ctx(), &storage.FundingRequest{ID: uuid.New(), WalletID: wID, Asset: "eth", State: "REQUESTED"}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.GetOpenFundingRequest(ctx(), wID, "usdc")
@@ -415,14 +415,14 @@ func TestFundingRequestOps(t *testing.T) {
 	if _, err := s.GetOpenFundingRequest(ctx(), wID, "btc"); err == nil {
 		t.Error("expected not found on missing open request")
 	}
-	if err := s.UpdateFundingState(ctx(), f1.ID, "approved", "batch1"); err != nil {
+	if err := s.UpdateFundingState(ctx(), f1.ID, "APPROVED", "batch1"); err != nil {
 		t.Fatal(err)
 	}
 	// now no open 'requested' for usdc
 	if _, err := s.GetOpenFundingRequest(ctx(), wID, "usdc"); err == nil {
 		t.Error("expected no open after approved")
 	}
-	if err := s.UpdateFundingState(ctx(), uuid.New(), "approved", ""); err == nil {
+	if err := s.UpdateFundingState(ctx(), uuid.New(), "APPROVED", ""); err == nil {
 		t.Error("expected not found on update missing funding")
 	}
 }

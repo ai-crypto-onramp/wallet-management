@@ -78,7 +78,7 @@ func TestCreateWhitelistReject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wr.State != "failed" {
+	if wr.State != "FAILED" {
 		t.Errorf("expected failed, got %s", wr.State)
 	}
 	if wr.FailureReason != "not_whitelisted" {
@@ -102,7 +102,7 @@ func TestCreatePolicyError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wr.State != "failed" {
+	if wr.State != "FAILED" {
 		t.Errorf("expected failed on policy error, got %s", wr.State)
 	}
 	if wr.FailureReason != "policy_error" {
@@ -142,14 +142,14 @@ func TestEVMHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wr.State != "whitelisted" {
+	if wr.State != "WHITELISTED" {
 		t.Fatalf("expected whitelisted, got %s", wr.State)
 	}
 	if err := e.svc.ConstructAndSign(context.Background(), wr.ID); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := e.st.GetWithdrawal(context.Background(), wr.ID)
-	if got.State != "signed" {
+	if got.State != "SIGNED" {
 		t.Fatalf("expected signed, got %s", got.State)
 	}
 	if got.NonceValue == nil || *got.NonceValue != 0 {
@@ -159,7 +159,7 @@ func TestEVMHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = e.st.GetWithdrawal(context.Background(), wr.ID)
-	if got.State != "broadcast" {
+	if got.State != "BROADCAST" {
 		t.Fatalf("expected broadcast, got %s", got.State)
 	}
 	if got.TxHash == "" {
@@ -174,7 +174,7 @@ func TestEVMHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = e.st.GetWithdrawal(context.Background(), wr.ID)
-	if got.State != "confirmed" || got.TxHash != "0xreal" {
+	if got.State != "CONFIRMED" || got.TxHash != "0xreal" {
 		t.Errorf("expected confirmed/0xreal, got %+v", got)
 	}
 }
@@ -183,7 +183,7 @@ func TestConstructAndSignNotWhitelisted(t *testing.T) {
 	e := newEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainEthereum, wallet.WalletStateActive)
 	// insert a pending withdrawal directly via store to skip whitelist
-	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: w.ID, ToAddress: "0x1", Asset: "eth", Amount: "1", State: "pending"}
+	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: w.ID, ToAddress: "0x1", Asset: "eth", Amount: "1", State: "PENDING"}
 	if err := e.st.CreateWithdrawal(context.Background(), wr); err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestSignFailureRollsBackNonce(t *testing.T) {
 		t.Fatal("expected sign error")
 	}
 	got, _ := e.st.GetWithdrawal(context.Background(), wr.ID)
-	if got.State != "failed" {
+	if got.State != "FAILED" {
 		t.Errorf("expected failed after sign error, got %s", got.State)
 	}
 	if got.FailureReason != "sign_failed" {
@@ -224,7 +224,7 @@ func TestBroadcastFailureRollsBackNonce(t *testing.T) {
 		t.Fatal("expected broadcast error")
 	}
 	got, _ := e.st.GetWithdrawal(context.Background(), wr.ID)
-	if got.State != "failed" || got.FailureReason != "broadcast_failed" {
+	if got.State != "FAILED" || got.FailureReason != "broadcast_failed" {
 		t.Errorf("expected failed/broadcast_failed, got %+v", got)
 	}
 }
@@ -233,8 +233,8 @@ func TestBTCHappyPath(t *testing.T) {
 	e := newEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainBitcoin, wallet.WalletStateActive)
 	// seed UTXOs
-	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "utxo1", WalletID: w.ID, Value: "100", LockState: "free"})
-	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "utxo2", WalletID: w.ID, Value: "50", LockState: "free"})
+	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "utxo1", WalletID: w.ID, Value: "100", LockState: "FREE"})
+	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "utxo2", WalletID: w.ID, Value: "50", LockState: "FREE"})
 	wr, err := e.svc.Create(context.Background(), CreateRequest{
 		WalletID: w.ID, ToAddress: "bc1qto", Asset: "btc", Amount: "120",
 	})
@@ -245,7 +245,7 @@ func TestBTCHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := e.st.GetWithdrawal(context.Background(), wr.ID)
-	if got.State != "signed" {
+	if got.State != "SIGNED" {
 		t.Fatalf("expected signed, got %s", got.State)
 	}
 	// utxos should be locked now
@@ -257,7 +257,7 @@ func TestBTCHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = e.st.GetWithdrawal(context.Background(), wr.ID)
-	if got.State != "broadcast" {
+	if got.State != "BROADCAST" {
 		t.Fatalf("expected broadcast, got %s", got.State)
 	}
 }
@@ -265,13 +265,13 @@ func TestBTCHappyPath(t *testing.T) {
 func TestReorgConfirmationRollback(t *testing.T) {
 	e := newEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainBitcoin, wallet.WalletStateActive)
-	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "utxo1", WalletID: w.ID, Value: "100", LockState: "free"})
+	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "utxo1", WalletID: w.ID, Value: "100", LockState: "FREE"})
 	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "bc1qto", Asset: "btc", Amount: "100"})
 	_ = e.svc.ConstructAndSign(context.Background(), wr.ID)
 	_ = e.svc.Broadcast(context.Background(), wr.ID)
 	_ = e.svc.Confirm(context.Background(), wr.ID, "0xtx1")
 	got, _ := e.st.GetWithdrawal(context.Background(), wr.ID)
-	if got.State != "confirmed" {
+	if got.State != "CONFIRMED" {
 		t.Fatalf("expected confirmed before reorg, got %s", got.State)
 	}
 	// reorg: rolls back to broadcast and restores utxos
@@ -279,7 +279,7 @@ func TestReorgConfirmationRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = e.st.GetWithdrawal(context.Background(), wr.ID)
-	if got.State != "broadcast" {
+	if got.State != "BROADCAST" {
 		t.Errorf("expected demoted to broadcast after reorg, got %s", got.State)
 	}
 	free, _ := e.st.ListFreeUTXOs(context.Background(), w.ID)
@@ -291,7 +291,7 @@ func TestReorgConfirmationRollback(t *testing.T) {
 func TestOnReorgNotConfirmed(t *testing.T) {
 	e := newEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainBitcoin, wallet.WalletStateActive)
-	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "u1", WalletID: w.ID, Value: "100", LockState: "free"})
+	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "u1", WalletID: w.ID, Value: "100", LockState: "FREE"})
 	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "bc1q", Asset: "btc", Amount: "100"})
 	_ = e.svc.ConstructAndSign(context.Background(), wr.ID)
 	// reorg when state is signed (not confirmed) — should still restore utxos but not change state
@@ -309,7 +309,7 @@ func TestFailRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := e.st.GetWithdrawal(context.Background(), wr.ID)
-	if got.State != "failed" || got.FailureReason != "manual" {
+	if got.State != "FAILED" || got.FailureReason != "manual" {
 		t.Errorf("expected failed/manual, got %+v", got)
 	}
 }

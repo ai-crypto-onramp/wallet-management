@@ -34,7 +34,7 @@ func (s *Service) Bind(ctx context.Context, walletID uuid.UUID, keyID string) er
 		WalletID:      walletID,
 		KeyID:         keyID,
 		ActiveFrom:    now,
-		RotationState: "current",
+		RotationState: string(storage.RotationStateCurrent),
 		CreatedAt:     now,
 	})
 }

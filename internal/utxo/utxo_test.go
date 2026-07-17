@@ -23,7 +23,7 @@ func seedUTXOs(t *testing.T, svc *Service, wID uuid.UUID, ops ...struct {
 	t.Helper()
 	for _, o := range ops {
 		if err := svc.TrackUTXO(context.Background(), &storage.UTXO{
-			Outpoint: o.outpoint, WalletID: wID, Value: o.value, LockState: "free",
+			Outpoint: o.outpoint, WalletID: wID, Value: o.value, LockState: "FREE",
 		}); err != nil {
 			t.Fatal(err)
 		}

@@ -49,8 +49,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Wallet, error
 		keyID = "pending:" + uuid.NewString()
 	}
 	now := time.Now().UTC()
+	walletID, _ := uuid.NewV7()
 	w := &Wallet{
-		ID:           uuid.New(),
+		ID:           walletID,
 		Chain:        req.Chain,
 		Type:         req.Type,
 		Label:        req.Label,

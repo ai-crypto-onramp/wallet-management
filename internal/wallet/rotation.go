@@ -154,8 +154,9 @@ func (p *RotationPolicy) deriveNew(ctx context.Context, w *Wallet) (*Address, er
 	if err != nil {
 		return nil, fmt.Errorf("derive: %w", err)
 	}
+	addrID, _ := uuid.NewV7()
 	addr := &Address{
-		ID:             uuid.New(),
+		ID:             addrID,
 		WalletID:       w.ID,
 		Chain:          w.Chain,
 		Address:        res.Address,

@@ -35,26 +35,26 @@ func (c Chain) IsEVM() bool {
 type WalletType string
 
 const (
-	WalletTypeHot  WalletType = "hot"
-	WalletTypeWarm WalletType = "warm"
-	WalletTypeCold WalletType = "cold"
+	WalletTypeHot  WalletType = "HOT"
+	WalletTypeWarm WalletType = "WARM"
+	WalletTypeCold WalletType = "COLD"
 )
 
 // WalletState is the operational lifecycle state of a wallet.
 type WalletState string
 
 const (
-	WalletStateActive  WalletState = "active"
-	WalletStatePaused  WalletState = "paused"
-	WalletStateRetired WalletState = "retired"
+	WalletStateActive  WalletState = "ACTIVE"
+	WalletStatePaused  WalletState = "PAUSED"
+	WalletStateRetired WalletState = "RETIRED"
 )
 
 // AddressState describes whether a derived address is eligible to receive funds.
 type AddressState string
 
 const (
-	AddressStateActive     AddressState = "active"
-	AddressStateDeprecated AddressState = "deprecated"
+	AddressStateActive     AddressState = "ACTIVE"
+	AddressStateDeprecated AddressState = "DEPRECATED"
 )
 
 // Wallet is the custody inventory record.

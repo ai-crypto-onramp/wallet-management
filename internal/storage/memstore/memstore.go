@@ -455,7 +455,7 @@ func (s *Store) ListFreeUTXOs(_ context.Context, walletID uuid.UUID) ([]*storage
 	defer s.lock()()
 	var out []*storage.UTXO
 	for _, u := range s.utxos {
-		if u.WalletID == walletID && u.LockState == "free" {
+		if u.WalletID == walletID && u.LockState == string(storage.UTXOLockStateFree) {
 			cp := *u
 			out = append(out, &cp)
 		}
@@ -471,14 +471,14 @@ func (s *Store) LockUTXOs(_ context.Context, outpoints []string) error {
 		if !ok {
 			return fmt.Errorf("utxo not found: %s", op)
 		}
-		if u.LockState != "free" {
+		if u.LockState != string(storage.UTXOLockStateFree) {
 			return fmt.Errorf("utxo not free: %s state=%s", op, u.LockState)
 		}
 	}
 	now := time.Now()
 	for _, op := range outpoints {
 		u := s.utxos[op]
-		u.LockState = "locked"
+		u.LockState = string(storage.UTXOLockStateLocked)
 		u.LockedAt = &now
 		u.UpdatedAt = now
 	}
@@ -493,7 +493,7 @@ func (s *Store) MarkUTXOsSpent(_ context.Context, outpoints []string, txHash str
 		if !ok {
 			return fmt.Errorf("utxo not found: %s", op)
 		}
-		u.LockState = "spent"
+		u.LockState = string(storage.UTXOLockStateSpent)
 		u.SpentAt = &now
 		u.TxHash = txHash
 		u.UpdatedAt = now
@@ -509,7 +509,7 @@ func (s *Store) RestoreUTXOs(_ context.Context, outpoints []string) error {
 		if !ok {
 			return fmt.Errorf("utxo not found: %s", op)
 		}
-		u.LockState = "free"
+		u.LockState = string(storage.UTXOLockStateFree)
 		u.SpentAt = nil
 		u.LockedAt = nil
 		u.TxHash = ""
@@ -625,7 +625,7 @@ func (s *Store) UpdateWithdrawalState(_ context.Context, id uuid.UUID, state str
 		return fmt.Errorf("withdrawal not found: %w", sql.ErrNoRows)
 	}
 	// release inflight dedup if transitioning to terminal
-	if state == "confirmed" || state == "failed" {
+	if state == string(storage.WithdrawalStateConfirmed) || state == string(storage.WithdrawalStateFailed) {
 		key := withdrawalDedupKey(w.WalletID, w.ToAddress, w.Amount, w.Asset)
 		delete(s.inflightWithdrawals, key)
 	}
@@ -657,7 +657,7 @@ func (s *Store) UpdateWithdrawalNonce(_ context.Context, id uuid.UUID, nonce int
 func (s *Store) BindKeyMapping(_ context.Context, m *storage.KeyMapping) error {
 	defer s.lock()()
 	for _, ex := range s.keyMappings[m.WalletID] {
-		if ex.RotationState == "current" && m.RotationState == "current" {
+		if ex.RotationState == string(storage.RotationStateCurrent) && m.RotationState == string(storage.RotationStateCurrent) {
 			return fmt.Errorf("current key mapping already exists")
 		}
 	}
@@ -676,7 +676,7 @@ func (s *Store) ResolveActiveKey(_ context.Context, walletID uuid.UUID) ([]*stor
 	defer s.lock()()
 	var out []*storage.KeyMapping
 	for _, m := range s.keyMappings[walletID] {
-		if m.RotationState == "current" || m.RotationState == "cooling" {
+		if m.RotationState == string(storage.RotationStateCurrent) || m.RotationState == string(storage.RotationStateCooling) {
 			cp := *m
 			out = append(out, &cp)
 		}
@@ -693,14 +693,14 @@ func (s *Store) RotateKeyMapping(_ context.Context, walletID uuid.UUID, newKeyID
 	now := time.Now()
 	activeTo := now.Add(cooling)
 	for _, m := range s.keyMappings[walletID] {
-		if m.RotationState == "current" {
-			m.RotationState = "cooling"
+		if m.RotationState == string(storage.RotationStateCurrent) {
+			m.RotationState = string(storage.RotationStateCooling)
 			m.ActiveTo = &activeTo
 		}
 	}
 	for _, m := range s.keyMappings[walletID] {
 		if m.KeyID == newKeyID {
-			m.RotationState = "current"
+			m.RotationState = string(storage.RotationStateCurrent)
 			m.ActiveTo = nil
 			m.ActiveFrom = now
 			return nil
@@ -710,7 +710,7 @@ func (s *Store) RotateKeyMapping(_ context.Context, walletID uuid.UUID, newKeyID
 		WalletID:      walletID,
 		KeyID:         newKeyID,
 		ActiveFrom:    now,
-		RotationState: "current",
+		RotationState: string(storage.RotationStateCurrent),
 		CreatedAt:     now,
 	})
 	return nil
@@ -721,8 +721,8 @@ func (s *Store) ExpireCooling(_ context.Context) error {
 	now := time.Now()
 	for _, mappings := range s.keyMappings {
 		for _, m := range mappings {
-			if m.RotationState == "cooling" && m.ActiveTo != nil && now.After(*m.ActiveTo) {
-				m.RotationState = "retired"
+			if m.RotationState == string(storage.RotationStateCooling) && m.ActiveTo != nil && now.After(*m.ActiveTo) {
+				m.RotationState = string(storage.RotationStateRetired)
 			}
 		}
 	}
@@ -733,7 +733,7 @@ func (s *Store) CreateFundingRequest(_ context.Context, f *storage.FundingReques
 	defer s.lock()()
 	// idempotency: one open 'requested' per (wallet, asset)
 	for _, ex := range s.fundingReq {
-		if ex.WalletID == f.WalletID && ex.Asset == f.Asset && ex.State == "requested" {
+		if ex.WalletID == f.WalletID && ex.Asset == f.Asset && ex.State == string(storage.FundingStateRequested) {
 			return storage.ErrDuplicateFunding
 		}
 	}
@@ -749,7 +749,7 @@ func (s *Store) CreateFundingRequest(_ context.Context, f *storage.FundingReques
 func (s *Store) GetOpenFundingRequest(_ context.Context, walletID uuid.UUID, asset string) (*storage.FundingRequest, error) {
 	defer s.lock()()
 	for _, f := range s.fundingReq {
-		if f.WalletID == walletID && f.Asset == asset && f.State == "requested" {
+		if f.WalletID == walletID && f.Asset == asset && f.State == string(storage.FundingStateRequested) {
 			cp := *f
 			return &cp, nil
 		}

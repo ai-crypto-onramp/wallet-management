@@ -133,14 +133,14 @@ func (s *Service) ManualRequest(ctx context.Context, walletID uuid.UUID, asset, 
 }
 
 func (s *Service) createRequest(ctx context.Context, w *wallet.Wallet, asset, amount, reason string) error {
-	id := uuid.New()
+	id, _ := uuid.NewV7()
 	now := time.Now()
 	fr := &storage.FundingRequest{
 		ID:        id,
 		WalletID:  w.ID,
 		Asset:     asset,
 		Amount:    amount,
-		State:     "requested",
+		State:     string(storage.FundingStateRequested),
 		Reason:    reason,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -170,18 +170,18 @@ func (s *Service) createRequest(ctx context.Context, w *wallet.Wallet, asset, am
 
 // MarkApproved transitions a funding request to approved.
 func (s *Service) MarkApproved(ctx context.Context, id uuid.UUID, treasuryBatchID string) error {
-	return s.Store.UpdateFundingState(ctx, id, "approved", treasuryBatchID)
+	return s.Store.UpdateFundingState(ctx, id, string(storage.FundingStateApproved), treasuryBatchID)
 }
 
 // MarkSettled transitions a funding request to settled.
 func (s *Service) MarkSettled(ctx context.Context, id uuid.UUID) error {
-	return s.Store.UpdateFundingState(ctx, id, "settled", "")
+	return s.Store.UpdateFundingState(ctx, id, string(storage.FundingStateSettled), "")
 }
 
 // MarkRejected transitions a funding request to rejected.
 func (s *Service) MarkRejected(ctx context.Context, id uuid.UUID, reason string) error {
 	_ = reason
-	return s.Store.UpdateFundingState(ctx, id, "rejected", "")
+	return s.Store.UpdateFundingState(ctx, id, string(storage.FundingStateRejected), "")
 }
 
 func parseDec(s string) int64 {

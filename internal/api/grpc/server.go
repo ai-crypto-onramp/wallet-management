@@ -15,6 +15,7 @@ import (
 
 	"github.com/ai-crypto-onramp/wallet-management/internal/balance"
 	"github.com/ai-crypto-onramp/wallet-management/internal/keymapping"
+	"github.com/ai-crypto-onramp/wallet-management/internal/storage"
 	"github.com/ai-crypto-onramp/wallet-management/internal/wallet"
 	"github.com/ai-crypto-onramp/wallet-management/internal/withdrawal"
 	"github.com/google/uuid"
@@ -167,7 +168,7 @@ func resolveKeyIDHandler(srv any, ctx context.Context, dec func(any) error, _ gr
 	var current string
 	for _, m := range mappings {
 		keyIDs = append(keyIDs, m.KeyID)
-		if m.RotationState == "current" {
+		if m.RotationState == string(storage.RotationStateCurrent) {
 			current = m.KeyID
 		}
 	}

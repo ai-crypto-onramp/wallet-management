@@ -145,7 +145,7 @@ func TestStateTransitions(t *testing.T) {
 	w := seedWallet(t, st, wallet.WalletTypeHot, wallet.WalletStateActive, "0")
 	_ = svc.EvaluateAndRequest(context.Background(), w.ID, "usdc")
 	open, _ := st.GetOpenFundingRequest(context.Background(), w.ID, "usdc")
-	if open.State != "requested" {
+	if open.State != "REQUESTED" {
 		t.Fatalf("expected requested, got %s", open.State)
 	}
 	if err := svc.MarkApproved(context.Background(), open.ID, "batch1"); err != nil {
@@ -185,7 +185,7 @@ func TestTreasuryFailureLeavesRequested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected open request after treasury failure: %v", err)
 	}
-	if open.State != "requested" {
+	if open.State != "REQUESTED" {
 		t.Errorf("expected requested, got %s", open.State)
 	}
 }
