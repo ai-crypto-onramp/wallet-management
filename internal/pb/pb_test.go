@@ -40,7 +40,7 @@ func TestWalletMessagesAccessors(t *testing.T) {
 			},
 			func(x *ResolveKeyIDRequest) {
 				x.Reset()
-				x.String()
+				_ = x.String()
 				x.ProtoMessage()
 				_ = x.ProtoReflect()
 				_, _ = x.Descriptor()
@@ -64,7 +64,7 @@ func TestWalletMessagesAccessors(t *testing.T) {
 			},
 			func(x *ResolveKeyIDResponse) {
 				x.Reset()
-				x.String()
+				_ = x.String()
 				x.ProtoMessage()
 				_ = x.ProtoReflect()
 				_, _ = x.Descriptor()
@@ -93,7 +93,7 @@ func TestWalletMessagesAccessors(t *testing.T) {
 			},
 			func(x *OnConfirmationRequest) {
 				x.Reset()
-				x.String()
+				_ = x.String()
 				x.ProtoMessage()
 				_ = x.ProtoReflect()
 				_, _ = x.Descriptor()
@@ -121,7 +121,7 @@ func TestWalletMessagesAccessors(t *testing.T) {
 			},
 			func(x *OnReorgRequest) {
 				x.Reset()
-				x.String()
+				_ = x.String()
 				x.ProtoMessage()
 				_ = x.ProtoReflect()
 				_, _ = x.Descriptor()
@@ -134,7 +134,7 @@ func TestWalletMessagesAccessors(t *testing.T) {
 			func(x *Empty) {},
 			func(x *Empty) {
 				x.Reset()
-				x.String()
+				_ = x.String()
 				x.ProtoMessage()
 				_ = x.ProtoReflect()
 				_, _ = x.Descriptor()
@@ -157,7 +157,7 @@ func TestClientsMessagesAccessors(t *testing.T) {
 			},
 			func(x *SignRequest) {
 				x.Reset()
-				x.String()
+				_ = x.String()
 				x.ProtoMessage()
 				_ = x.ProtoReflect()
 				_, _ = x.Descriptor()
@@ -177,7 +177,7 @@ func TestClientsMessagesAccessors(t *testing.T) {
 			},
 			func(x *SignResponse) {
 				x.Reset()
-				x.String()
+				_ = x.String()
 				x.ProtoMessage()
 				_ = x.ProtoReflect()
 				_, _ = x.Descriptor()
@@ -197,7 +197,7 @@ func TestClientsMessagesAccessors(t *testing.T) {
 			},
 			func(x *BroadcastTxRequest) {
 				x.Reset()
-				x.String()
+				_ = x.String()
 				x.ProtoMessage()
 				_ = x.ProtoReflect()
 				_, _ = x.Descriptor()
@@ -215,7 +215,7 @@ func TestClientsMessagesAccessors(t *testing.T) {
 			},
 			func(x *BroadcastTxResponse) {
 				x.Reset()
-				x.String()
+				_ = x.String()
 				x.ProtoMessage()
 				_ = x.ProtoReflect()
 				_, _ = x.Descriptor()
