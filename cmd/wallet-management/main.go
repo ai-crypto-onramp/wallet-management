@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/ai-crypto-onramp/wallet-management/internal/audit"
 	"github.com/ai-crypto-onramp/wallet-management/internal/balance"
 	"github.com/ai-crypto-onramp/wallet-management/internal/cache"
+	"github.com/ai-crypto-onramp/wallet-management/internal/clients"
 	"github.com/ai-crypto-onramp/wallet-management/internal/config"
 	"github.com/ai-crypto-onramp/wallet-management/internal/deriver"
 	"github.com/ai-crypto-onramp/wallet-management/internal/funding"
@@ -44,6 +46,7 @@ func main() {
 
 func run() error {
 	cfg := config.FromEnv()
+	devMode := os.Getenv("DEV_MODE") == "1"
 
 	st, err := postgres.New(cfg.DBURL)
 	if err != nil {
@@ -71,30 +74,57 @@ func run() error {
 		}
 	}
 	if c == nil {
-		log.Printf("redis unavailable; using in-memory cache and locker")
+		if !devMode {
+			log.Printf("redis unavailable; using in-memory cache and locker (warning: not safe for production)")
+		} else {
+			log.Printf("DEV_MODE=1: redis unavailable; using in-memory cache and locker (NOT FOR PRODUCTION)")
+		}
 		c = cache.NewMem()
 		lk = lock.NewMemLocker()
 	}
 
 	// Derivers. In production the xpubs would be loaded from a secrets store
 	// per chain; here we read from env so the binary is self-contained.
-	evm, err := deriver.NewEVM(envOr("EVM_XPUB", "xpub-placeholder"), c, cfg.DerivationCacheTTL)
+	xpubEnv := func(name string) string {
+		v := os.Getenv(name)
+		if v == "" {
+			if devMode {
+				log.Printf("DEV_MODE=1: %s unset — using placeholder (NOT FOR PRODUCTION)", name)
+				return "xpub-placeholder"
+			}
+			log.Fatalf("%s required in production mode; real secrets store integration not yet wired — set DEV_MODE=1 for local dev", name)
+		}
+		return v
+	}
+	evm, err := deriver.NewEVM(xpubEnv("EVM_XPUB"), c, cfg.DerivationCacheTTL)
 	if err != nil {
 		return err
 	}
-	sol, err := deriver.NewSolana(envOr("SOL_XPUB", "xpub-placeholder"), c, cfg.DerivationCacheTTL)
+	sol, err := deriver.NewSolana(xpubEnv("SOL_XPUB"), c, cfg.DerivationCacheTTL)
 	if err != nil {
 		return err
 	}
-	btc, err := deriver.NewBTC(envOr("BTC_XPUB", "xpub-placeholder"), &chaincfg.MainNetParams, c, cfg.DerivationCacheTTL)
+	btc, err := deriver.NewBTC(xpubEnv("BTC_XPUB"), &chaincfg.MainNetParams, c, cfg.DerivationCacheTTL)
 	if err != nil {
 		return err
 	}
 	registry := deriver.NewRegistry(evm, sol, btc)
 
-	emitter := audit.NewEmitter(st, nil)
+	var auditSink audit.Sink
+	if brokers := os.Getenv("KAFKA_BROKERS"); brokers != "" {
+		auditSink = audit.NewKafkaSink(splitCSV(brokers))
+		log.Printf("audit sink: kafka (%s), topic %s", brokers, audit.AuditTopic)
+	} else if devMode {
+		log.Printf("warn: KAFKA_BROKERS unset and DEV_MODE=1; audit outbox will be drained but events dropped")
+	} else {
+		log.Fatalf("KAFKA_BROKERS unset and DEV_MODE not set; cannot start audit producer")
+	}
+	emitter := audit.NewEmitter(st, auditSink)
 	emitter.Start(ctx, 5*time.Second)
 	defer emitter.Stop()
+	if ks, ok := auditSink.(*audit.KafkaSink); ok {
+		defer ks.Close()
+	}
 
 	walletSvc := wallet.NewService(st, registry, lk, emitter, cfg)
 	balanceSvc := balance.NewService(st, emitter, cfg)
@@ -104,8 +134,36 @@ func run() error {
 	treasuryClient := funding.NewHTTPClient(cfg.TreasuryOrchestrationURL)
 	fundingSvc := funding.NewService(st, balanceSvc, treasuryClient, emitter, cfg)
 	policyClient := policy.NewHTTPClient(cfg.PolicyRiskEngineURL)
-	signer := &grpcclient.MockMPCSigner{}
-	gw := &grpcclient.MockGatewayClient{}
+
+	// MPC signer + blockchain gateway.  Real gRPC clients live in
+	// internal/clients; we wire them in prod.  In DEV_MODE the Mocks are
+	// used so the service boots without those dependencies.
+	var signer grpcclient.MPCSigner
+	var gw grpcclient.GatewayClient
+	if devMode {
+		log.Printf("DEV_MODE=1: using MockMPCSigner / MockGatewayClient (NOT FOR PRODUCTION)")
+		signer = &grpcclient.MockMPCSigner{}
+		gw = &grpcclient.MockGatewayClient{}
+	} else {
+		if cfg.MPCSigningURL == "" {
+			log.Fatalf("MPC_SIGNING_URL required in production mode — set DEV_MODE=1 for local dev")
+		}
+		if cfg.BlockchainGatewayURL == "" {
+			log.Fatalf("BLOCKCHAIN_GATEWAY_URL required in production mode — set DEV_MODE=1 for local dev")
+		}
+		realSigner, err := clients.NewMPCSigningClient(cfg.MPCSigningURL)
+		if err != nil {
+			log.Fatalf("dial mpc-signing-service %q: %v", cfg.MPCSigningURL, err)
+		}
+		defer realSigner.Close()
+		signer = realSigner
+		realGw, err := clients.NewGatewayClient(cfg.BlockchainGatewayURL)
+		if err != nil {
+			log.Fatalf("dial blockchain-gateway %q: %v", cfg.BlockchainGatewayURL, err)
+		}
+		defer realGw.Close()
+		gw = realGw
+	}
 
 	withdrawalSvc := withdrawal.NewService(st, walletSvc, nonceSvc, utxoSvc, policyClient, signer, gw, keymapSvc, emitter)
 	balanceSvc.UTXORestore = utxoSvc.RestoreOnReorg
@@ -158,4 +216,15 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func splitCSV(s string) []string {
+	out := []string{}
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

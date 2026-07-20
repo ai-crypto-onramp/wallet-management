@@ -3,6 +3,8 @@ package audit
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -10,7 +12,10 @@ import (
 
 	"github.com/ai-crypto-onramp/wallet-management/internal/storage"
 	"github.com/google/uuid"
+	"github.com/segmentio/kafka-go"
 )
+
+const AuditTopic = "audit.v1"
 
 // Event is a domain event to be recorded in the audit log.
 type Event struct {
@@ -35,14 +40,90 @@ type Sink interface {
 	Deliver(ctx context.Context, events []*storage.AuditOutboxEvent) error
 }
 
-// HTTPSink POSTs events as a JSON array to the audit event log URL.
-type HTTPSink struct {
-	URL    string
-	Client doer
+// KafkaSink publishes each AuditOutboxEvent wrapped in the canonical audit.v1
+// envelope (see .github/contracts/asyncapi/audit/v1/asyncapi.yaml) to the `audit.v1`
+// Kafka topic. The envelope's `payload` field carries the event's raw
+// `Payload` bytes; `payload_hash` is the SHA-256 of those bytes.
+type KafkaSink struct {
+	writer *kafka.Writer
 }
 
-type doer interface {
-	Do(req interface{}) (interface{}, error)
+// NewKafkaSink returns a KafkaSink targeting the given brokers (comma-
+// separated). Topic is fixed to audit.v1.
+func NewKafkaSink(brokers []string) *KafkaSink {
+	if len(brokers) == 0 {
+		return &KafkaSink{}
+	}
+	return &KafkaSink{
+		writer: &kafka.Writer{
+			Addr:         kafka.TCP(brokers...),
+			Topic:        AuditTopic,
+			Balancer:     &kafka.LeastBytes{},
+			BatchTimeout: 10 * time.Millisecond,
+			RequiredAcks: kafka.RequireAll,
+		},
+	}
+}
+
+// Close flushes and closes the underlying writer.
+func (s *KafkaSink) Close() error {
+	if s.writer == nil {
+		return nil
+	}
+	return s.writer.Close()
+}
+
+// Deliver wraps each event in the canonical envelope and publishes it.
+func (s *KafkaSink) Deliver(ctx context.Context, events []*storage.AuditOutboxEvent) error {
+	if s.writer == nil {
+		return fmt.Errorf("audit kafka: not connected")
+	}
+	msgs := make([]kafka.Message, 0, len(events))
+	for _, ev := range events {
+		envelope, key, err := buildEnvelope(ev)
+		if err != nil {
+			return err
+		}
+		body, err := json.Marshal(envelope)
+		if err != nil {
+			return fmt.Errorf("audit kafka encode: %w", err)
+		}
+		msgs = append(msgs, kafka.Message{Key: []byte(key), Value: body})
+	}
+	if err := s.writer.WriteMessages(ctx, msgs...); err != nil {
+		return fmt.Errorf("audit kafka publish: %w", err)
+	}
+	return nil
+}
+
+func buildEnvelope(ev *storage.AuditOutboxEvent) (map[string]any, string, error) {
+	sum := sha256.Sum256(ev.Payload)
+	payloadHash := "sha256:" + hex.EncodeToString(sum[:])
+	targetID := ""
+	if ev.WalletID != nil {
+		targetID = ev.WalletID.String()
+	}
+	id := ev.EventID.String()
+	if id == "" || id == uuid.Nil.String() {
+		id = uuid.NewString()
+	}
+	var payload any
+	if len(ev.Payload) > 0 {
+		payload = json.RawMessage(ev.Payload)
+	}
+	envelope := map[string]any{
+		"schema_version": "1",
+		"id":              id,
+		"ts":              ev.CreatedAt.UTC().Format(time.RFC3339Nano),
+		"source_service":  "wallet-management",
+		"actor_id":        "wallet-management",
+		"action":          ev.EventType,
+		"target_type":     "wallet",
+		"target_id":       targetID,
+		"payload_hash":    payloadHash,
+		"payload":         payload,
+	}
+	return envelope, id, nil
 }
 
 // EmitterService is the production Emitter: writes to the outbox within the

@@ -21,7 +21,6 @@ type Config struct {
 	BlockchainGatewayURL     string
 	TreasuryOrchestrationURL string
 	PolicyRiskEngineURL      string
-	AuditEventLogURL         string
 	HotWalletMinBalanceUSD   float64
 	DerivationCacheTTL       time.Duration
 	LogLevel                 string
@@ -43,7 +42,6 @@ func FromEnv() Config {
 		BlockchainGatewayURL:     envOr("BLOCKCHAIN_GATEWAY_URL", "dns:///localhost:9092"),
 		TreasuryOrchestrationURL: envOr("TREASURY_ORCHESTRATION_URL", "http://localhost:8081"),
 		PolicyRiskEngineURL:      envOr("POLICY_RISK_ENGINE_URL", "http://localhost:8082"),
-		AuditEventLogURL:         envOr("AUDIT_EVENT_LOG_URL", "http://localhost:8083"),
 		HotWalletMinBalanceUSD:   envFloat("HOT_WALLET_MIN_BALANCE_USD", 50000),
 		DerivationCacheTTL:       envDuration("DERIVATION_CACHE_TTL", 5*time.Minute),
 		LogLevel:                 envOr("LOG_LEVEL", "info"),
