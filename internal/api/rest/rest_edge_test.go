@@ -31,19 +31,21 @@ import (
 // the REST handlers' error branches can be exercised.
 type errStore struct {
 	*memstore.Store
-	listWalletsErr     error
-	listAddressesErr   error
-	listBalancesErr    error
-	getWalletErr       error
-	insertAddressErr   error
-	deprecateAddrErr   error
-	nextAddrIndexErr   error
-	getOpenFundingErr  error
-	createFundingErr   error
+	listWalletsErr      error
+	listAddressesErr    error
+	listBalancesErr     error
+	getWalletErr        error
+	insertAddressErr    error
+	deprecateAddrErr    error
+	nextAddrIndexErr    error
+	getOpenFundingErr   error
+	createFundingErr    error
 	createWithdrawalErr error
-	getWithdrawalErr   error
-	updateWdStateErr   error
-	createWalletErr    error
+	getWithdrawalErr    error
+	updateWdStateErr    error
+	createWalletErr     error
+	listFundingErr      error
+	listWithdrawalsErr  error
 }
 
 func (s *errStore) CreateWallet(ctx context.Context, w *wallet.Wallet) error {
@@ -135,6 +137,20 @@ func (s *errStore) UpdateWithdrawalState(ctx context.Context, id uuid.UUID, stat
 		return s.updateWdStateErr
 	}
 	return s.Store.UpdateWithdrawalState(ctx, id, state, reason, txHash, policyDecisionID)
+}
+
+func (s *errStore) ListFundingRequests(ctx context.Context, walletID uuid.UUID, state string) ([]*storage.FundingRequest, error) {
+	if s.listFundingErr != nil {
+		return nil, s.listFundingErr
+	}
+	return s.Store.ListFundingRequests(ctx, walletID, state)
+}
+
+func (s *errStore) ListWithdrawals(ctx context.Context, walletID uuid.UUID, state string) ([]*storage.WithdrawalRequest, error) {
+	if s.listWithdrawalsErr != nil {
+		return nil, s.listWithdrawalsErr
+	}
+	return s.Store.ListWithdrawals(ctx, walletID, state)
 }
 
 // newErrDeps builds Deps backed by an errStore so handlers can be driven into
@@ -372,3 +388,34 @@ func TestPostWalletEmptyBody(t *testing.T) {
 }
 
 var _ = errors.New
+
+func TestListFundingRequestsError(t *testing.T) {
+	deps, st := newErrDeps(t)
+	wID := uuid.New()
+	_ = st.Store.CreateWallet(context.Background(), &wallet.Wallet{ID: wID, Chain: wallet.ChainEthereum, Type: wallet.WalletTypeWarm, State: wallet.WalletStateActive, KeyID: "k", CustodianRef: "mpc"})
+	st.listFundingErr = errors.New("db down")
+	r := NewRouter(deps)
+	rec := doRequest(t, r, http.MethodGet, "/v1/wallets/"+wID.String()+"/funding-requests", nil)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListFundingRequestsBadID(t *testing.T) {
+	deps, _ := newErrDeps(t)
+	r := NewRouter(deps)
+	rec := doRequest(t, r, http.MethodGet, "/v1/wallets/not-a-uuid/funding-requests", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestListWithdrawalsError(t *testing.T) {
+	deps, st := newErrDeps(t)
+	st.listWithdrawalsErr = errors.New("db down")
+	r := NewRouter(deps)
+	rec := doRequest(t, r, http.MethodGet, "/v1/withdrawals", nil)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
