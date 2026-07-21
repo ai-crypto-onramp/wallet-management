@@ -4,14 +4,15 @@ package rest
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
-	"database/sql"
 	"net/http"
 	"time"
 
 	"github.com/ai-crypto-onramp/wallet-management/internal/balance"
 	"github.com/ai-crypto-onramp/wallet-management/internal/funding"
+	"github.com/ai-crypto-onramp/wallet-management/internal/nonce"
 	"github.com/ai-crypto-onramp/wallet-management/internal/storage"
 	"github.com/ai-crypto-onramp/wallet-management/internal/wallet"
 	"github.com/ai-crypto-onramp/wallet-management/internal/withdrawal"
@@ -26,6 +27,7 @@ type Deps struct {
 	Balances   *balance.Service
 	Funding    *funding.Service
 	Withdrawal *withdrawal.Service
+	Nonce      *nonce.Service
 }
 
 // NewRouter builds the chi router with all wallet-management endpoints.
@@ -50,6 +52,8 @@ func NewRouter(d Deps) http.Handler {
 
 		r.Post("/wallets/{id}/funding-request", createFundingRequest(d))
 		r.Get("/wallets/{id}/funding-requests", listFundingRequests(d))
+
+		r.Post("/wallets/{id}/nonce/allocate", allocateNonce(d))
 
 		r.Post("/withdrawals", createWithdrawal(d))
 		r.Get("/withdrawals", listWithdrawals(d))
@@ -332,6 +336,46 @@ func listFundingRequests(d Deps) http.HandlerFunc {
 			frs = []*storage.FundingRequest{}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"funding_requests": frs})
+	}
+}
+
+type allocateNonceReq struct {
+	Chain string `json:"chain"`
+}
+
+type allocateNonceResp struct {
+	Nonce int64 `json:"nonce"`
+}
+
+// allocateNonce reserves the next pending nonce for the wallet on the
+// given chain via nonce.Service.ReserveNonce. It is the endpoint called
+// by the blockchain-gateway prepayment coordinator.
+func allocateNonce(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseID(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if d.Nonce == nil {
+			writeError(w, http.StatusServiceUnavailable, errors.New("nonce service unavailable"))
+			return
+		}
+		var req allocateNonceReq
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if req.Chain == "" {
+			writeError(w, http.StatusBadRequest, errors.New("chain is required"))
+			return
+		}
+		n, err := d.Nonce.ReserveNonce(r.Context(), id, wallet.Chain(req.Chain))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, allocateNonceResp{Nonce: n})
 	}
 }
 

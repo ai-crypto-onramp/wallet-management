@@ -113,6 +113,7 @@ func run() error {
 		Balances:   balanceSvc,
 		Funding:    fundingSvc,
 		Withdrawal: withdrawalSvc,
+		Nonce:      nonceSvc,
 	})
 	grpcSrv := grpcserver.NewServer(grpcserver.Deps{
 		KeyMappings: keymapSvc,

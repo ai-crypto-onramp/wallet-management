@@ -57,13 +57,15 @@ func (s *Service) CommitNonce(ctx context.Context, walletID uuid.UUID, chain wal
 	return s.Store.AdvanceBroadcastNonce(ctx, walletID, string(chain), nonce)
 }
 
-// RollbackNonce releases a reserved nonce without advancing broadcast. Because
-// pending_nonce is monotonically increasing, a rolled-back nonce produces a gap
-// in broadcast_nonce that the next reservation will fill via the chain's
-// mempool replacement policy. We implement rollback as a no-op (the reserved
-// value is simply never committed), which is gap-safe.
-func (s *Service) RollbackNonce(_ context.Context, _ uuid.UUID, _ wallet.Chain, _ int64) error {
-	return nil
+// RollbackNonce releases a reserved nonce back to the available pool. It is
+// gap-safe: pending_nonce is only decremented back to `nonce` when the
+// current pending_nonce equals `nonce+1` (i.e. this was the most recently
+// reserved nonce and no higher nonce has been reserved in the meantime). If
+// a higher nonce was already reserved, the rollback is a no-op and the gap
+// will be filled by the chain's mempool replacement policy.
+func (s *Service) RollbackNonce(ctx context.Context, walletID uuid.UUID, chain wallet.Chain, nonce int64) error {
+	_, err := s.Store.RollbackPendingNonce(ctx, walletID, string(chain), nonce)
+	return err
 }
 
 // Get returns the current nonce row.

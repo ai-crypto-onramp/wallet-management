@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ai-crypto-onramp/wallet-management/internal/storage"
 	"github.com/ai-crypto-onramp/wallet-management/internal/domain"
+	"github.com/ai-crypto-onramp/wallet-management/internal/storage"
 	"github.com/google/uuid"
 )
 
@@ -25,14 +25,14 @@ type Store struct {
 	wallets   map[uuid.UUID]*domain.Wallet
 	addresses map[uuid.UUID]*domain.Address
 
-	balances       map[string]*storage.Balance // key: walletID|asset
-	balanceEvents  map[string]bool             // dedup key: walletID|asset|block|eventID
-	utxos          map[string]*storage.UTXO
-	nonces         map[string]*storage.Nonce
-	withdrawals    map[uuid.UUID]*storage.WithdrawalRequest
-	keyMappings    map[uuid.UUID][]*storage.KeyMapping
-	fundingReq     map[uuid.UUID]*storage.FundingRequest
-	auditOutbox    []*storage.AuditOutboxEvent
+	balances         map[string]*storage.Balance // key: walletID|asset
+	balanceEvents    map[string]bool             // dedup key: walletID|asset|block|eventID
+	utxos            map[string]*storage.UTXO
+	nonces           map[string]*storage.Nonce
+	withdrawals      map[uuid.UUID]*storage.WithdrawalRequest
+	keyMappings      map[uuid.UUID][]*storage.KeyMapping
+	fundingReq       map[uuid.UUID]*storage.FundingRequest
+	auditOutbox      []*storage.AuditOutboxEvent
 	auditSeqCounters map[uuid.UUID]int64
 
 	// inflight withdrawal dedup: key walletID|to|amount|asset
@@ -155,7 +155,7 @@ func (s *Store) snapshot() memSnapshot {
 		keyMappings:         make(map[uuid.UUID][]*storage.KeyMapping, len(s.keyMappings)),
 		fundingReq:          make(map[uuid.UUID]*storage.FundingRequest, len(s.fundingReq)),
 		auditOutbox:         append([]*storage.AuditOutboxEvent(nil), s.auditOutbox...),
-		auditSeqCounters:   make(map[uuid.UUID]int64, len(s.auditSeqCounters)),
+		auditSeqCounters:    make(map[uuid.UUID]int64, len(s.auditSeqCounters)),
 		inflightWithdrawals: make(map[string]bool, len(s.inflightWithdrawals)),
 	}
 	for k, v := range s.wallets {
@@ -572,6 +572,24 @@ func (s *Store) AdvanceBroadcastNonce(_ context.Context, walletID uuid.UUID, cha
 	return nil
 }
 
+// RollbackPendingNonce conditionally decrements pending_nonce back to `to`
+// only when the current pending_nonce equals `to+1`. Returns 1 if rolled
+// back, 0 otherwise. Gap-safe.
+func (s *Store) RollbackPendingNonce(_ context.Context, walletID uuid.UUID, chain string, to int64) (int64, error) {
+	defer s.lock()()
+	n, ok := s.nonces[nonceKey(walletID, chain)]
+	if !ok {
+		return 0, nil
+	}
+	if n.PendingNonce == to+1 {
+		n.PendingNonce = to
+		n.Version++
+		n.UpdatedAt = time.Now()
+		return 1, nil
+	}
+	return 0, nil
+}
+
 func (s *Store) CreateWithdrawal(_ context.Context, w *storage.WithdrawalRequest) error {
 	defer s.lock()()
 	if _, ok := s.withdrawals[w.ID]; ok {
@@ -587,6 +605,16 @@ func (s *Store) CreateWithdrawal(_ context.Context, w *storage.WithdrawalRequest
 		cp.CreatedAt = time.Now()
 	}
 	cp.UpdatedAt = cp.CreatedAt
+	if cp.ReservedOutpoints != nil {
+		ops := make([]string, len(cp.ReservedOutpoints))
+		copy(ops, cp.ReservedOutpoints)
+		cp.ReservedOutpoints = ops
+	}
+	if cp.SignedTxBytes != nil {
+		b := make([]byte, len(cp.SignedTxBytes))
+		copy(b, cp.SignedTxBytes)
+		cp.SignedTxBytes = b
+	}
 	s.withdrawals[w.ID] = &cp
 	return nil
 }
@@ -598,6 +626,16 @@ func (s *Store) GetWithdrawal(_ context.Context, id uuid.UUID) (*storage.Withdra
 		return nil, fmt.Errorf("withdrawal not found: %w", sql.ErrNoRows)
 	}
 	cp := *w
+	if cp.ReservedOutpoints != nil {
+		ops := make([]string, len(cp.ReservedOutpoints))
+		copy(ops, cp.ReservedOutpoints)
+		cp.ReservedOutpoints = ops
+	}
+	if cp.SignedTxBytes != nil {
+		b := make([]byte, len(cp.SignedTxBytes))
+		copy(b, cp.SignedTxBytes)
+		cp.SignedTxBytes = b
+	}
 	return &cp, nil
 }
 
@@ -612,6 +650,16 @@ func (s *Store) ListWithdrawals(_ context.Context, walletID uuid.UUID, stateF st
 			continue
 		}
 		cp := *w
+		if cp.ReservedOutpoints != nil {
+			ops := make([]string, len(cp.ReservedOutpoints))
+			copy(ops, cp.ReservedOutpoints)
+			cp.ReservedOutpoints = ops
+		}
+		if cp.SignedTxBytes != nil {
+			b := make([]byte, len(cp.SignedTxBytes))
+			copy(b, cp.SignedTxBytes)
+			cp.SignedTxBytes = b
+		}
 		out = append(out, &cp)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
@@ -650,6 +698,32 @@ func (s *Store) UpdateWithdrawalNonce(_ context.Context, id uuid.UUID, nonce int
 		return fmt.Errorf("withdrawal not found: %w", sql.ErrNoRows)
 	}
 	w.NonceValue = &nonce
+	w.UpdatedAt = time.Now()
+	return nil
+}
+
+func (s *Store) UpdateWithdrawalOutpoints(_ context.Context, id uuid.UUID, outpoints []string) error {
+	defer s.lock()()
+	w, ok := s.withdrawals[id]
+	if !ok {
+		return fmt.Errorf("withdrawal not found: %w", sql.ErrNoRows)
+	}
+	cp := make([]string, len(outpoints))
+	copy(cp, outpoints)
+	w.ReservedOutpoints = cp
+	w.UpdatedAt = time.Now()
+	return nil
+}
+
+func (s *Store) UpdateWithdrawalSignedTx(_ context.Context, id uuid.UUID, txBytes []byte) error {
+	defer s.lock()()
+	w, ok := s.withdrawals[id]
+	if !ok {
+		return fmt.Errorf("withdrawal not found: %w", sql.ErrNoRows)
+	}
+	cp := make([]byte, len(txBytes))
+	copy(cp, txBytes)
+	w.SignedTxBytes = cp
 	w.UpdatedAt = time.Now()
 	return nil
 }

@@ -107,23 +107,50 @@ func TestRollbackNonceGapSafe(t *testing.T) {
 	wID := uuid.New()
 	n0, _ := svc.ReserveNonce(ctx, wID, wallet.ChainEthereum) // 0
 	n1, _ := svc.ReserveNonce(ctx, wID, wallet.ChainEthereum) // 1
-	// rollback n1 — should not advance broadcast and should be gap-safe
+	// rollback n1 — the most recently reserved nonce. pending_nonce should
+	// be decremented back to 1 so the next reservation reuses n1 (no gap).
 	if err := svc.RollbackNonce(ctx, wID, wallet.ChainEthereum, n1); err != nil {
 		t.Fatal(err)
 	}
-	// commit n0 only
-	_ = svc.CommitNonce(ctx, wID, wallet.ChainEthereum, n0)
 	got, _ := st.GetNonce(ctx, wID, "ethereum")
+	if got.PendingNonce != 1 {
+		t.Errorf("expected pending=1 after rollback of most-recent nonce, got %d", got.PendingNonce)
+	}
+	// commit n0
+	_ = svc.CommitNonce(ctx, wID, wallet.ChainEthereum, n0)
+	got, _ = st.GetNonce(ctx, wID, "ethereum")
 	if got.BroadcastNonce != 1 {
 		t.Errorf("expected broadcast=1, got %d", got.BroadcastNonce)
 	}
-	if got.PendingNonce != 2 {
-		t.Errorf("expected pending=2 (still incremented), got %d", got.PendingNonce)
+	// next reserve should reuse the rolled-back n1 value (1), not 2.
+	n1Again, _ := svc.ReserveNonce(ctx, wID, wallet.ChainEthereum)
+	if n1Again != 1 {
+		t.Errorf("expected next reserve=1 (reused), got %d", n1Again)
 	}
-	// next reserve continues monotonically
-	n2, _ := svc.ReserveNonce(ctx, wID, wallet.ChainEthereum)
-	if n2 != 2 {
-		t.Errorf("expected next reserve=2, got %d", n2)
+}
+
+func TestRollbackNonceNoOpWhenHigherReserved(t *testing.T) {
+	svc, st := newSvc(t)
+	ctx := context.Background()
+	wID := uuid.New()
+	_, _ = svc.ReserveNonce(ctx, wID, wallet.ChainEthereum)   // 0
+	n1, _ := svc.ReserveNonce(ctx, wID, wallet.ChainEthereum) // 1
+	_, _ = svc.ReserveNonce(ctx, wID, wallet.ChainEthereum)   // 2
+	// rollback n1 — but n2 has already been reserved, so pending_nonce cannot
+	// be decremented back to 1 (that would let n1 be re-reserved while n2 is
+	// still outstanding). The rollback is a no-op and the gap is filled by
+	// the chain's mempool replacement policy.
+	if err := svc.RollbackNonce(ctx, wID, wallet.ChainEthereum, n1); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := st.GetNonce(ctx, wID, "ethereum")
+	if got.PendingNonce != 3 {
+		t.Errorf("expected pending=3 (rollback no-op), got %d", got.PendingNonce)
+	}
+	// next reserve continues monotonically from 3.
+	n3, _ := svc.ReserveNonce(ctx, wID, wallet.ChainEthereum)
+	if n3 != 3 {
+		t.Errorf("expected next reserve=3, got %d", n3)
 	}
 }
 

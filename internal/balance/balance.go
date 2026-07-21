@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/ai-crypto-onramp/wallet-management/internal/audit"
@@ -15,6 +14,7 @@ import (
 	"github.com/ai-crypto-onramp/wallet-management/internal/storage"
 	"github.com/ai-crypto-onramp/wallet-management/internal/wallet"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 // ConfirmationEvent is a balance confirmation event from the Blockchain Gateway.
@@ -102,9 +102,9 @@ func (s *Service) ApplyConfirmationEvent(ctx context.Context, ev *ConfirmationEv
 		amount := parseDec(ev.Amount)
 
 		if s.isConfirmed(ev) {
-			confirmed = addDec(confirmed, amount)
+			confirmed = confirmed.Add(amount)
 		} else {
-			pending = addDec(pending, amount)
+			pending = pending.Add(amount)
 		}
 
 		upd := &storage.Balance{
@@ -136,7 +136,7 @@ func (s *Service) ApplyConfirmationEvent(ctx context.Context, ev *ConfirmationEv
 	}
 	// A confirmed decrease (e.g. a settled withdrawal) may drop a hot wallet
 	// below its funding threshold — let the funding service evaluate.
-	if s.OnConfirmedDecrease != nil && s.isConfirmed(ev) && parseDec(ev.Amount) < 0 {
+	if s.OnConfirmedDecrease != nil && s.isConfirmed(ev) && parseDec(ev.Amount).IsNegative() {
 		s.OnConfirmedDecrease(ev.WalletID, ev.Asset)
 	}
 	return nil
@@ -155,8 +155,8 @@ func (s *Service) ApplyReorgEvent(ctx context.Context, ev *ReorgEvent) error {
 		}
 		confirmed := parseDec(cur.Confirmed)
 		pending := parseDec(cur.Pending)
-		pending = addDec(pending, confirmed)
-		confirmed = 0
+		pending = pending.Add(confirmed)
+		confirmed = decimal.Zero
 		upd := &storage.Balance{
 			WalletID:      ev.WalletID,
 			Asset:         ev.Asset,
@@ -206,7 +206,7 @@ func (s *Service) AddLocked(ctx context.Context, walletID uuid.UUID, asset, amou
 		if err != nil {
 			return err
 		}
-		locked := addDec(parseDec(cur.Locked), parseDec(amount))
+		locked := parseDec(cur.Locked).Add(parseDec(amount))
 		return s.Store.UpsertBalance(ctx, &storage.Balance{
 			WalletID: walletID, Asset: asset,
 			Confirmed: cur.Confirmed, Pending: cur.Pending, Locked: formatDec(locked),
@@ -222,9 +222,9 @@ func (s *Service) ReleaseLocked(ctx context.Context, walletID uuid.UUID, asset, 
 		if err != nil {
 			return err
 		}
-		locked := subDec(parseDec(cur.Locked), parseDec(amount))
-		if locked < 0 {
-			locked = 0
+		locked := parseDec(cur.Locked).Sub(parseDec(amount))
+		if locked.IsNegative() {
+			locked = decimal.Zero
 		}
 		return s.Store.UpsertBalance(ctx, &storage.Balance{
 			WalletID: walletID, Asset: asset,
@@ -234,32 +234,23 @@ func (s *Service) ReleaseLocked(ctx context.Context, walletID uuid.UUID, asset, 
 	})
 }
 
-// helpers using float64 is risky for money; we use string-based decimal math via
-// strconv on fixed-point integers represented as integer strings.
-
-func parseDec(s string) int64 {
+// parseDec parses a fixed-point decimal string into decimal.Decimal. Returns
+// zero on empty/invalid input (callers treat balance strings as trusted
+// integers written by this package). Used for money fields where int64 would
+// overflow at ~92 BTC satoshis or instantly for ETH wei.
+func parseDec(s string) decimal.Decimal {
 	if s == "" {
-		return 0
+		return decimal.Zero
 	}
-	// interpret as integer minor units (caller is responsible for scale).
-	n, err := strconv.ParseInt(s, 10, 64)
+	d, err := decimal.NewFromString(s)
 	if err != nil {
-		return 0
+		return decimal.Zero
 	}
-	return n
+	return d
 }
 
-func formatDec(n int64) string {
-	return strconv.FormatInt(n, 10)
-}
-
-func addDec(a, b int64) int64 { return a + b }
-
-func subDec(a, b int64) int64 {
-	if b > a {
-		return 0
-	}
-	return a - b
+func formatDec(n decimal.Decimal) string {
+	return n.String()
 }
 
 func max64(a, b int64) int64 {

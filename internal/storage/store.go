@@ -25,12 +25,12 @@ var (
 type WithdrawalState string
 
 const (
-	WithdrawalStatePending    WithdrawalState = "PENDING"
+	WithdrawalStatePending     WithdrawalState = "PENDING"
 	WithdrawalStateWhitelisted WithdrawalState = "WHITELISTED"
-	WithdrawalStateSigned     WithdrawalState = "SIGNED"
+	WithdrawalStateSigned      WithdrawalState = "SIGNED"
 	WithdrawalStateBroadcast   WithdrawalState = "BROADCAST"
-	WithdrawalStateConfirmed  WithdrawalState = "CONFIRMED"
-	WithdrawalStateFailed     WithdrawalState = "FAILED"
+	WithdrawalStateConfirmed   WithdrawalState = "CONFIRMED"
+	WithdrawalStateFailed      WithdrawalState = "FAILED"
 )
 
 // FundingState enumerates the lifecycle states of a FundingRequest.
@@ -38,9 +38,9 @@ type FundingState string
 
 const (
 	FundingStateRequested FundingState = "REQUESTED"
-	FundingStateApproved   FundingState = "APPROVED"
-	FundingStateSettled    FundingState = "SETTLED"
-	FundingStateRejected   FundingState = "REJECTED"
+	FundingStateApproved  FundingState = "APPROVED"
+	FundingStateSettled   FundingState = "SETTLED"
+	FundingStateRejected  FundingState = "REJECTED"
 )
 
 // RotationState enumerates the key rotation states of a KeyMapping.
@@ -110,18 +110,20 @@ type Nonce struct {
 
 // WithdrawalRequest is an outbound withdrawal record.
 type WithdrawalRequest struct {
-	ID              uuid.UUID
-	WalletID        uuid.UUID
-	ToAddress       string
-	Asset           string
-	Amount          string
-	State           string
-	PolicyDecisionID string
-	FailureReason   string
-	TxHash          string
-	NonceValue      *int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                uuid.UUID
+	WalletID          uuid.UUID
+	ToAddress         string
+	Asset             string
+	Amount            string
+	State             string
+	PolicyDecisionID  string
+	FailureReason     string
+	TxHash            string
+	NonceValue        *int64
+	ReservedOutpoints []string
+	SignedTxBytes     []byte
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // KeyMapping binds a wallet to an MPC key_id with rotation state.
@@ -149,25 +151,25 @@ type FundingRequest struct {
 
 // AuditOutboxEvent is a pending audit event row.
 type AuditOutboxEvent struct {
-	ID        uuid.UUID
-	EventID   uuid.UUID
-	WalletID  *uuid.UUID
-	EventType string
-	Payload   []byte
-	Seq       int64
-	Delivered bool
-	Attempts  int
-	CreatedAt time.Time
+	ID          uuid.UUID
+	EventID     uuid.UUID
+	WalletID    *uuid.UUID
+	EventType   string
+	Payload     []byte
+	Seq         int64
+	Delivered   bool
+	Attempts    int
+	CreatedAt   time.Time
 	DeliveredAt *time.Time
 }
 
 // BalanceEvent is an idempotency record for a balance confirmation event.
 type BalanceEvent struct {
-	ID           uuid.UUID
-	WalletID     uuid.UUID
-	Asset        string
-	BlockHeight  int64
-	EventID      string
+	ID          uuid.UUID
+	WalletID    uuid.UUID
+	Asset       string
+	BlockHeight int64
+	EventID     string
 }
 
 // Store is the persistence boundary for the entire service.
@@ -212,6 +214,13 @@ type Store interface {
 	UpsertNonce(ctx context.Context, n *Nonce) error
 	IncrementPendingNonce(ctx context.Context, walletID uuid.UUID, chain string) (int64, int, error)
 	AdvanceBroadcastNonce(ctx context.Context, walletID uuid.UUID, chain string, nonce int64) error
+	// RollbackPendingNonce conditionally decrements pending_nonce back to
+	// `to` only when the current pending_nonce equals `to+1` (i.e. the rolled-
+	// back value was the most recently reserved). If a higher nonce has
+	// already been reserved in the meantime, the rollback is a no-op: the
+	// gap will be filled by the chain's mempool replacement policy. This
+	// returns the number of rows affected (1 if rolled back, 0 otherwise).
+	RollbackPendingNonce(ctx context.Context, walletID uuid.UUID, chain string, to int64) (int64, error)
 
 	// Withdrawals
 	CreateWithdrawal(ctx context.Context, w *WithdrawalRequest) error
@@ -219,6 +228,12 @@ type Store interface {
 	ListWithdrawals(ctx context.Context, walletID uuid.UUID, state string) ([]*WithdrawalRequest, error)
 	UpdateWithdrawalState(ctx context.Context, id uuid.UUID, state string, reason string, txHash string, policyDecisionID string) error
 	UpdateWithdrawalNonce(ctx context.Context, id uuid.UUID, nonce int64) error
+	// UpdateWithdrawalOutpoints persists the reserved UTXO outpoints on the
+	// withdrawal row so a restart can detect double-spends.
+	UpdateWithdrawalOutpoints(ctx context.Context, id uuid.UUID, outpoints []string) error
+	// UpdateWithdrawalSignedTx persists the assembled signed transaction
+	// bytes produced by MPC signing so Broadcast can submit the real bytes.
+	UpdateWithdrawalSignedTx(ctx context.Context, id uuid.UUID, txBytes []byte) error
 
 	// Key mappings
 	BindKeyMapping(ctx context.Context, m *KeyMapping) error

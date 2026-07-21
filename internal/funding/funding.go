@@ -19,6 +19,7 @@ import (
 	"github.com/ai-crypto-onramp/wallet-management/internal/storage"
 	"github.com/ai-crypto-onramp/wallet-management/internal/wallet"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 // TreasuryClient posts funding requests to Treasury Orchestration.
@@ -96,14 +97,14 @@ func (s *Service) EvaluateAndRequest(ctx context.Context, walletID uuid.UUID, as
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	confirmed := int64(0)
+	confirmed := decimal.Zero
 	if bal != nil {
 		confirmed = parseDec(bal.Confirmed)
 	}
 	if w.Type != wallet.WalletTypeHot {
 		return nil // only hot wallets auto-request
 	}
-	if float64(confirmed) >= s.Config.HotWalletMinBalanceUSD {
+	if confirmed.InexactFloat64() >= s.Config.HotWalletMinBalanceUSD {
 		return nil
 	}
 	// idempotency: check for an existing open request
@@ -112,7 +113,7 @@ func (s *Service) EvaluateAndRequest(ctx context.Context, walletID uuid.UUID, as
 	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	return s.createRequest(ctx, w, asset, strconv.FormatInt(int64(s.Config.HotWalletMinBalanceUSD-float64(confirmed)), 10), "auto:below_threshold")
+	return s.createRequest(ctx, w, asset, strconv.FormatInt(int64(s.Config.HotWalletMinBalanceUSD-confirmed.InexactFloat64()), 10), "auto:below_threshold")
 }
 
 // ManualRequest creates a funding request for any wallet (operator-initiated).
@@ -184,10 +185,17 @@ func (s *Service) MarkRejected(ctx context.Context, id uuid.UUID, reason string)
 	return s.Store.UpdateFundingState(ctx, id, string(storage.FundingStateRejected), "")
 }
 
-func parseDec(s string) int64 {
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 0
+// parseDec parses a fixed-point decimal string into decimal.Decimal. Returns
+// zero on empty/invalid input. Money is stored as NUMERIC(38,18) in Postgres
+// and string in memstore; int64 parsing would overflow for ETH wei / large
+// BTC satoshi balances.
+func parseDec(s string) decimal.Decimal {
+	if s == "" {
+		return decimal.Zero
 	}
-	return n
+	d, err := decimal.NewFromString(s)
+	if err != nil {
+		return decimal.Zero
+	}
+	return d
 }

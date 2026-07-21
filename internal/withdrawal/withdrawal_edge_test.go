@@ -21,7 +21,7 @@ type errStore struct {
 	getWalletErr        error
 	getWithdrawalErr    error
 	updateWithdrawalErr error
-	restoreUTXOsErr    error
+	restoreUTXOsErr     error
 }
 
 func (s *errStore) GetWallet(ctx context.Context, id uuid.UUID) (*wallet.Wallet, error) {
@@ -70,7 +70,7 @@ func TestConstructAndSignKeyLookupError(t *testing.T) {
 	e := newErrEnv(t)
 	e.svc.KeyLookup = &errKeyResolver{err: errors.New("kms down")}
 	w := seedWallet(t, e.st, wallet.ChainEthereum, wallet.WalletStateActive)
-	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "0x1", Asset: "eth", Amount: "1"})
+	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: validEVMA, Asset: "eth", Amount: "1"})
 	if err := e.svc.ConstructAndSign(context.Background(), wr.ID); err == nil {
 		t.Error("expected error when key lookup fails")
 	}
@@ -80,7 +80,7 @@ func TestConstructAndSignBTCUTXOSelectError(t *testing.T) {
 	e := newErrEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainBitcoin, wallet.WalletStateActive)
 	// No UTXOs seeded — SelectForAmount will return insufficient funds.
-	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: w.ID, ToAddress: "bc1q", Asset: "btc", Amount: "999", State: "WHITELISTED"}
+	wr := &storage.WithdrawalRequest{ID: uuid.New(), WalletID: w.ID, ToAddress: validBTCA, Asset: "btc", Amount: "999", State: "WHITELISTED"}
 	if err := e.st.CreateWithdrawal(context.Background(), wr); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestBroadcastGetWithdrawalError(t *testing.T) {
 func TestBroadcastGetWalletError(t *testing.T) {
 	e := newErrEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainEthereum, wallet.WalletStateActive)
-	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "0x1", Asset: "eth", Amount: "1"})
+	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: validEVMA, Asset: "eth", Amount: "1"})
 	_ = e.svc.ConstructAndSign(context.Background(), wr.ID)
 	// Swap in a store whose GetWallet fails only after the withdrawal is fetched.
 	e.svc.Store = &errStore{Store: e.st, getWalletErr: errors.New("db down")}
@@ -120,7 +120,7 @@ func TestConfirmGetWithdrawalError(t *testing.T) {
 func TestConfirmUpdateStateError(t *testing.T) {
 	e := newErrEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainEthereum, wallet.WalletStateActive)
-	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "0x1", Asset: "eth", Amount: "1"})
+	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: validEVMA, Asset: "eth", Amount: "1"})
 	_ = e.svc.ConstructAndSign(context.Background(), wr.ID)
 	_ = e.svc.Broadcast(context.Background(), wr.ID)
 	e.svc.Store = &errStore{Store: e.st, updateWithdrawalErr: errors.New("db down")}
@@ -140,7 +140,7 @@ func TestFailGetWithdrawalError(t *testing.T) {
 func TestFailUpdateStateError(t *testing.T) {
 	e := newErrEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainEthereum, wallet.WalletStateActive)
-	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "0x1", Asset: "eth", Amount: "1"})
+	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: validEVMA, Asset: "eth", Amount: "1"})
 	_ = e.svc.ConstructAndSign(context.Background(), wr.ID)
 	e.svc.Store = &errStore{Store: e.st, updateWithdrawalErr: errors.New("db down")}
 	if err := e.svc.Fail(context.Background(), wr.ID, "manual"); err == nil {
@@ -159,14 +159,14 @@ func TestOnReorgGetWithdrawalError(t *testing.T) {
 func TestOnReorgRestoreError(t *testing.T) {
 	e := newErrEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainBitcoin, wallet.WalletStateActive)
-	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: "u1", WalletID: w.ID, Value: "100", LockState: "FREE"})
-	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "bc1q", Asset: "btc", Amount: "100"})
+	_ = e.utxos.TrackUTXO(context.Background(), &storage.UTXO{Outpoint: validOutpointA, WalletID: w.ID, Value: "100", LockState: "FREE"})
+	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: validBTCA, Asset: "btc", Amount: "100"})
 	_ = e.svc.ConstructAndSign(context.Background(), wr.ID)
 	_ = e.svc.Broadcast(context.Background(), wr.ID)
 	_ = e.svc.Confirm(context.Background(), wr.ID, "0xtx")
 	// Point the UTXO service at a failing store so RestoreOnReorg errors.
 	e.svc.UTXOs.Store = &errStore{Store: e.st, restoreUTXOsErr: errors.New("utxo restore down")}
-	if err := e.svc.OnReorg(context.Background(), wr.ID, []string{"u1"}); err == nil {
+	if err := e.svc.OnReorg(context.Background(), wr.ID, []string{validOutpointA}); err == nil {
 		t.Error("expected error when RestoreUTXOs fails in OnReorg")
 	}
 }
@@ -174,7 +174,7 @@ func TestOnReorgRestoreError(t *testing.T) {
 func TestConstructAndSignGetWalletError(t *testing.T) {
 	e := newErrEnv(t)
 	w := seedWallet(t, e.st, wallet.ChainEthereum, wallet.WalletStateActive)
-	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "0x1", Asset: "eth", Amount: "1"})
+	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: validEVMA, Asset: "eth", Amount: "1"})
 	e.svc.Store = &errStore{Store: e.st, getWalletErr: errors.New("db down")}
 	if err := e.svc.ConstructAndSign(context.Background(), wr.ID); err == nil {
 		t.Error("expected error when GetWallet fails in ConstructAndSign")
@@ -187,7 +187,7 @@ func TestCreateUpdateWithdrawalStateError(t *testing.T) {
 	// is called. Inject a failure there.
 	e.svc.Store = &errStore{Store: e.st, updateWithdrawalErr: errors.New("db down")}
 	w := seedWallet(t, e.st, wallet.ChainEthereum, wallet.WalletStateActive)
-	_, err := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "0xgood", Asset: "eth", Amount: "1"})
+	_, err := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: validEVMA, Asset: "eth", Amount: "1"})
 	if err == nil {
 		t.Error("expected error when UpdateWithdrawalState fails during Create whitelist path")
 	}
@@ -197,7 +197,7 @@ func TestReserveNonceErrorInConstructAndSign(t *testing.T) {
 	e := newErrEnv(t)
 	e.svc.Nonces.Locker = &errLocker{}
 	w := seedWallet(t, e.st, wallet.ChainEthereum, wallet.WalletStateActive)
-	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: "0x1", Asset: "eth", Amount: "1"})
+	wr, _ := e.svc.Create(context.Background(), CreateRequest{WalletID: w.ID, ToAddress: validEVMA, Asset: "eth", Amount: "1"})
 	if err := e.svc.ConstructAndSign(context.Background(), wr.ID); err == nil {
 		t.Error("expected error when ReserveNonce fails in ConstructAndSign")
 	}

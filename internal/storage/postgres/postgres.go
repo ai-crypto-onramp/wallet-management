@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ai-crypto-onramp/wallet-management/internal/storage"
 	"github.com/ai-crypto-onramp/wallet-management/internal/domain"
+	"github.com/ai-crypto-onramp/wallet-management/internal/storage"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
@@ -421,25 +422,36 @@ func (s *Store) AdvanceBroadcastNonce(ctx context.Context, walletID uuid.UUID, c
 	return err
 }
 
+// RollbackPendingNonce conditionally decrements pending_nonce back to `to`
+// only when the current pending_nonce equals `to+1`. Gap-safe: if a higher
+// nonce was already reserved, the row is left untouched.
+func (s *Store) RollbackPendingNonce(ctx context.Context, walletID uuid.UUID, chain string, to int64) (int64, error) {
+	res, err := s.exec(ctx, `UPDATE nonces SET pending_nonce=$3, updated_at=now() WHERE wallet_id=$1 AND chain=$2 AND pending_nonce=$3+1`, walletID, chain, to)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (s *Store) CreateWithdrawal(ctx context.Context, w *storage.WithdrawalRequest) error {
 	_, err := s.exec(ctx,
-		`INSERT INTO withdrawal_requests (id, wallet_id, to_address, asset, amount, state, policy_decision_id, failure_reason, tx_hash, nonce_value, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-		w.ID, w.WalletID, w.ToAddress, w.Asset, w.Amount, w.State, w.PolicyDecisionID, w.FailureReason, w.TxHash, w.NonceValue, w.CreatedAt, w.UpdatedAt)
+		`INSERT INTO withdrawal_requests (id, wallet_id, to_address, asset, amount, state, policy_decision_id, failure_reason, tx_hash, nonce_value, reserved_outpoints, signed_tx_bytes, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		w.ID, w.WalletID, w.ToAddress, w.Asset, w.Amount, w.State, w.PolicyDecisionID, w.FailureReason, w.TxHash, w.NonceValue, pq.Array(w.ReservedOutpoints), w.SignedTxBytes, w.CreatedAt, w.UpdatedAt)
 	return err
 }
 
 func (s *Store) GetWithdrawal(ctx context.Context, id uuid.UUID) (*storage.WithdrawalRequest, error) {
-	row := s.queryRow(ctx, `SELECT id, wallet_id, to_address, asset, amount, state, policy_decision_id, failure_reason, tx_hash, nonce_value, created_at, updated_at FROM withdrawal_requests WHERE id=$1`, id)
+	row := s.queryRow(ctx, `SELECT id, wallet_id, to_address, asset, amount, state, policy_decision_id, failure_reason, tx_hash, nonce_value, reserved_outpoints, signed_tx_bytes, created_at, updated_at FROM withdrawal_requests WHERE id=$1`, id)
 	w := &storage.WithdrawalRequest{}
-	if err := row.Scan(&w.ID, &w.WalletID, &w.ToAddress, &w.Asset, &w.Amount, &w.State, &w.PolicyDecisionID, &w.FailureReason, &w.TxHash, &w.NonceValue, &w.CreatedAt, &w.UpdatedAt); err != nil {
+	if err := row.Scan(&w.ID, &w.WalletID, &w.ToAddress, &w.Asset, &w.Amount, &w.State, &w.PolicyDecisionID, &w.FailureReason, &w.TxHash, &w.NonceValue, pq.Array(&w.ReservedOutpoints), &w.SignedTxBytes, &w.CreatedAt, &w.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return w, nil
 }
 
 func (s *Store) ListWithdrawals(ctx context.Context, walletID uuid.UUID, stateF string) ([]*storage.WithdrawalRequest, error) {
-	q := `SELECT id, wallet_id, to_address, asset, amount, state, policy_decision_id, failure_reason, tx_hash, nonce_value, created_at, updated_at FROM withdrawal_requests`
+	q := `SELECT id, wallet_id, to_address, asset, amount, state, policy_decision_id, failure_reason, tx_hash, nonce_value, reserved_outpoints, signed_tx_bytes, created_at, updated_at FROM withdrawal_requests`
 	var args []any
 	if walletID != uuid.Nil && stateF != "" {
 		q += " WHERE wallet_id=$1 AND state=$2 ORDER BY created_at"
@@ -461,7 +473,7 @@ func (s *Store) ListWithdrawals(ctx context.Context, walletID uuid.UUID, stateF 
 	var out []*storage.WithdrawalRequest
 	for rows.Next() {
 		w := &storage.WithdrawalRequest{}
-		if err := rows.Scan(&w.ID, &w.WalletID, &w.ToAddress, &w.Asset, &w.Amount, &w.State, &w.PolicyDecisionID, &w.FailureReason, &w.TxHash, &w.NonceValue, &w.CreatedAt, &w.UpdatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.WalletID, &w.ToAddress, &w.Asset, &w.Amount, &w.State, &w.PolicyDecisionID, &w.FailureReason, &w.TxHash, &w.NonceValue, pq.Array(&w.ReservedOutpoints), &w.SignedTxBytes, &w.CreatedAt, &w.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, w)
@@ -478,6 +490,16 @@ func (s *Store) UpdateWithdrawalState(ctx context.Context, id uuid.UUID, state s
 
 func (s *Store) UpdateWithdrawalNonce(ctx context.Context, id uuid.UUID, nonce int64) error {
 	_, err := s.exec(ctx, `UPDATE withdrawal_requests SET nonce_value=$2, updated_at=now() WHERE id=$1`, id, nonce)
+	return err
+}
+
+func (s *Store) UpdateWithdrawalOutpoints(ctx context.Context, id uuid.UUID, outpoints []string) error {
+	_, err := s.exec(ctx, `UPDATE withdrawal_requests SET reserved_outpoints=$2, updated_at=now() WHERE id=$1`, id, pq.Array(outpoints))
+	return err
+}
+
+func (s *Store) UpdateWithdrawalSignedTx(ctx context.Context, id uuid.UUID, txBytes []byte) error {
+	_, err := s.exec(ctx, `UPDATE withdrawal_requests SET signed_tx_bytes=$2, updated_at=now() WHERE id=$1`, id, txBytes)
 	return err
 }
 

@@ -54,7 +54,7 @@ func newDeps(t *testing.T) (Deps, *memstore.Store) {
 	gw := &grpcclient.MockGatewayClient{}
 	kr := &staticKeyResolver{keyID: "k1"}
 	wsvc2 := withdrawal.NewService(st, wsvc, ns, us, pc, signer, gw, kr, em)
-	return Deps{Wallets: wsvc, Balances: bal, Funding: fsvc, Withdrawal: wsvc2}, st
+	return Deps{Wallets: wsvc, Balances: bal, Funding: fsvc, Withdrawal: wsvc2, Nonce: ns}, st
 }
 
 type staticKeyResolver struct{ keyID string }
@@ -446,6 +446,45 @@ func TestListFundingRequests(t *testing.T) {
 	decode(t, rec, &resp)
 	if len(resp.FundingRequests) != 1 {
 		t.Fatalf("expected 1 funding request, got %d", len(resp.FundingRequests))
+	}
+}
+
+func TestAllocateNonce(t *testing.T) {
+	deps, st := newDeps(t)
+	r := NewRouter(deps)
+	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "w"})
+	var w wallet.Wallet
+	decode(t, create, &w)
+	_ = st
+	rec := doRequest(t, r, http.MethodPost, "/v1/wallets/"+w.ID.String()+"/nonce/allocate", map[string]string{"chain": "ethereum"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp allocateNonceResp
+	decode(t, rec, &resp)
+	if resp.Nonce < 0 {
+		t.Errorf("nonce: %d", resp.Nonce)
+	}
+}
+
+func TestAllocateNonceBadWalletID(t *testing.T) {
+	deps, _ := newDeps(t)
+	r := NewRouter(deps)
+	rec := doRequest(t, r, http.MethodPost, "/v1/wallets/not-a-uuid/nonce/allocate", map[string]string{"chain": "ethereum"})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestAllocateNonceMissingChain(t *testing.T) {
+	deps, _ := newDeps(t)
+	r := NewRouter(deps)
+	create := doRequest(t, r, http.MethodPost, "/v1/wallets", map[string]string{"chain": "ethereum", "type": "HOT", "label": "w"})
+	var w wallet.Wallet
+	decode(t, create, &w)
+	rec := doRequest(t, r, http.MethodPost, "/v1/wallets/"+w.ID.String()+"/nonce/allocate", map[string]string{})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

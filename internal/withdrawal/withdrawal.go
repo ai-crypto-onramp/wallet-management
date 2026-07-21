@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"time"
 
@@ -161,18 +162,37 @@ func (s *Service) ConstructAndSign(ctx context.Context, id uuid.UUID) error {
 			return fmt.Errorf("select utxos: %w", err)
 		}
 		reservedOutpoints = ops
+		if err := s.Store.UpdateWithdrawalOutpoints(ctx, id, ops); err != nil {
+			log.Printf("withdrawal %s: persist reserved outpoints: %v", id, err)
+			s.rollback(ctx, w, reservedNonce, reservedOutpoints)
+			return fmt.Errorf("persist outpoints: %w", err)
+		}
 	}
 
-	unsigned := buildUnsignedTx(w, wr, reservedNonce, reservedOutpoints)
+	unsigned, err := BuildUnsignedTx(w, wr, reservedNonce, reservedOutpoints)
+	if err != nil {
+		s.rollback(ctx, w, reservedNonce, reservedOutpoints)
+		return fmt.Errorf("build unsigned tx: %w", err)
+	}
 	resp, err := s.Signer.Sign(ctx, &grpcclient.SignRequest{
-		KeyID: keyID, TxBytes: unsigned, WalletID: wr.WalletID,
+		KeyID: keyID, TxBytes: unsigned.Payload, WalletID: wr.WalletID,
 	})
 	if err != nil {
 		s.rollback(ctx, w, reservedNonce, reservedOutpoints)
 		_ = s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateFailed), "sign_failed", "", "")
 		return fmt.Errorf("sign: %w", err)
 	}
-	_ = resp
+	signedBytes, err := unsigned.Assemble(resp.Signature)
+	if err != nil {
+		s.rollback(ctx, w, reservedNonce, reservedOutpoints)
+		_ = s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateFailed), "assemble_failed", "", "")
+		return fmt.Errorf("assemble signed tx: %w", err)
+	}
+	if err := s.Store.UpdateWithdrawalSignedTx(ctx, id, signedBytes); err != nil {
+		log.Printf("withdrawal %s: persist signed tx: %v", id, err)
+		s.rollback(ctx, w, reservedNonce, reservedOutpoints)
+		return fmt.Errorf("persist signed tx: %w", err)
+	}
 	if err := s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateSigned), "", "", ""); err != nil {
 		return err
 	}
@@ -180,7 +200,7 @@ func (s *Service) ConstructAndSign(ctx context.Context, id uuid.UUID) error {
 		_ = s.Audit.Emit(ctx, &audit.Event{
 			EventType: "withdrawal.signed",
 			WalletID:  &wr.WalletID,
-			Payload:   map[string]any{"id": id, "nonce": reservedNonce, "utxos": reservedOutpoints},
+			Payload:   map[string]any{"id": id, "nonce": reservedNonce, "utxos": reservedOutpoints, "signed_bytes_len": len(signedBytes)},
 		})
 	}
 	return nil
@@ -199,22 +219,23 @@ func (s *Service) Broadcast(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
+	if len(wr.SignedTxBytes) == 0 {
+		return fmt.Errorf("withdrawal %s has no signed tx bytes", id)
+	}
 	resp, err := s.Gateway.BroadcastTx(ctx, &grpcclient.BroadcastRequest{
-		Chain: string(w.Chain), TxBytes: []byte("signed:" + wr.ID.String()), WalletID: wr.WalletID,
+		Chain: string(w.Chain), TxBytes: wr.SignedTxBytes, WalletID: wr.WalletID,
 	})
 	if err != nil {
 		// rollback reserved resources
-		var ops []string
-		s.rollback(ctx, w, noncePtr(wr), ops)
+		s.rollback(ctx, w, noncePtr(wr), wr.ReservedOutpoints)
 		_ = s.Store.UpdateWithdrawalState(ctx, id, string(storage.WithdrawalStateFailed), "broadcast_failed", "", "")
 		return fmt.Errorf("broadcast: %w", err)
 	}
 	if w.Chain == wallet.ChainBitcoin {
-		// mark UTXOs as spent with the broadcast tx hash
-		// We don't have the outpoint list stored on the withdrawal row in this
-		// simplified model; in production we'd persist them. For tests we rely
-		// on the mock gateway.
-		_ = s.UTXOs.MarkSpent(ctx, nil, resp.TxHash)
+		// mark the reserved UTXOs as spent with the broadcast tx hash
+		if len(wr.ReservedOutpoints) > 0 {
+			_ = s.UTXOs.MarkSpent(ctx, wr.ReservedOutpoints, resp.TxHash)
+		}
 	}
 	if w.Chain.IsEVM() {
 		if wr.NonceValue != nil {
@@ -322,8 +343,4 @@ func decisionID(dec *policy.CheckResponse, err error) string {
 		return "nil"
 	}
 	return dec.DecisionID
-}
-
-func buildUnsignedTx(w *wallet.Wallet, wr *storage.WithdrawalRequest, nonce int64, outpoints []string) []byte {
-	return []byte(fmt.Sprintf("unsigned:%s:%s:%s:%d:%v", w.Chain, wr.ToAddress, wr.Amount, nonce, outpoints))
 }
