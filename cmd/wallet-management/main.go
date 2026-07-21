@@ -29,6 +29,7 @@ import (
 	"github.com/ai-crypto-onramp/wallet-management/internal/lock"
 	"github.com/ai-crypto-onramp/wallet-management/internal/migrations"
 	"github.com/ai-crypto-onramp/wallet-management/internal/nonce"
+	"github.com/ai-crypto-onramp/wallet-management/internal/otel"
 	"github.com/ai-crypto-onramp/wallet-management/internal/policy"
 	"github.com/ai-crypto-onramp/wallet-management/internal/storage/postgres"
 	"github.com/ai-crypto-onramp/wallet-management/internal/utxo"
@@ -46,6 +47,12 @@ func main() {
 }
 
 func run() error {
+	shutdown, err := otel.Init("wallet-management")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = shutdown(context.Background()) }()
+
 	cfg := config.FromEnv()
 	devMode := os.Getenv("DEV_MODE") == "1"
 

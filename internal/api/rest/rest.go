@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Deps bundles the service dependencies the REST handlers need.
@@ -389,7 +390,7 @@ func NewServer(addr string, d Deps) *Server {
 	return &Server{
 		httpSrv: &http.Server{
 			Addr:              addr,
-			Handler:           NewRouter(d),
+			Handler:           otelhttp.NewHandler(NewRouter(d), "wallet-management"),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
 	}
